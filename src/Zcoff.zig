@@ -112,6 +112,9 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
         try writer.writeAll("OPTIONAL HEADER VALUES\n");
         const magic = try reader.readIntLittle(u16);
         try stream.seekBy(-2);
+
+        var number_of_directories: u32 = 0;
+
         switch (magic) {
             coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC => {
                 const pe_header = try reader.readStruct(coff.OptionalHeaderPE32);
@@ -161,6 +164,7 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                         try writer.writeByte('\n');
                     } else try writer.writeByte('\n');
                 }
+                number_of_directories = pe_header.number_of_rva_and_sizes;
             },
             coff.IMAGE_NT_OPTIONAL_HDR64_MAGIC => {
                 const pe_header = try reader.readStruct(coff.OptionalHeaderPE64);
@@ -209,11 +213,42 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                         try writer.writeByte('\n');
                     } else try writer.writeByte('\n');
                 }
+                number_of_directories = pe_header.number_of_rva_and_sizes;
             },
             else => {
                 std.log.err("unknown PE optional header magic: {x}", .{magic});
                 return error.UnknownPEOptionalHeaderMagic;
             },
+        }
+
+        if (number_of_directories > 0) {
+            inline for (&[_][]const u8{
+                "Export Directory",
+                "Import Directory",
+                "Resource Directory",
+                "Exception Directory",
+                "Certificates Directory",
+                "Base Relocation Directory",
+                "Debug Directory",
+                "Architecture Directory",
+                "Global Pointer Directory",
+                "Thread Storage Directory",
+                "Load Configuration Directory",
+                "Bound Import Directory",
+                "Import Address Table Directory",
+                "Delay Import Directory",
+                "COM Descriptor Directory",
+                "Reserved Directory",
+            }) |desc, i| {
+                if (i < number_of_directories) {
+                    const data_dir = try reader.readStruct(coff.ImageDataDirectory);
+                    try writer.print("{x: >20} [{x: >10}] RVA [size] of {s}\n", .{
+                        data_dir.virtual_address,
+                        data_dir.size,
+                        desc,
+                    });
+                }
+            }
         }
     }
 }

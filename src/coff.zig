@@ -215,3 +215,8 @@ pub const OptionalHeaderPE64 = extern struct {
     loader_flags: u32,
     number_of_rva_and_sizes: u32,
 };
+
+pub const ImageDataDirectory = extern struct {
+    virtual_address: u32,
+    size: u32,
+};
