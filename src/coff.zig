@@ -71,7 +71,43 @@ pub const CoffHeader = extern struct {
     characteristics: u16,
 };
 
-pub const OptionalHeader = extern struct {
+pub const IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b;
+pub const IMAGE_NT_OPTIONAL_HDR64_MAGIC = 0x20b;
+
+/// Image can handle a high entropy 64-bit virtual address space.
+pub const IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA: u16 = 0x20;
+
+/// DLL can be relocated at load time.
+pub const IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE: u16 = 0x40;
+
+/// Code Integrity checks are enforced.
+pub const IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY: u16 = 0x80;
+
+/// Image is NX compatible.
+pub const IMAGE_DLLCHARACTERISTICS_NX_COMPAT: u16 = 0x100;
+
+/// Isolation aware, but do not isolate the image.
+pub const IMAGE_DLLCHARACTERISTICS_NO_ISOLATION: u16 = 0x200;
+
+/// Does not use structured exception (SE) handling. No SE handler may be called in this image.
+pub const IMAGE_DLLCHARACTERISTICS_NO_SEH: u16 = 0x400;
+
+/// Do not bind the image.
+pub const IMAGE_DLLCHARACTERISTICS_NO_BIND: u16 = 0x800;
+
+/// Image must execute in an AppContainer.
+pub const IMAGE_DLLCHARACTERISTICS_APPCONTAINER: u16 = 0x1000;
+
+/// A WDM driver.
+pub const IMAGE_DLLCHARACTERISTICS_WDM_DRIVER: u16 = 0x2000;
+
+/// Image supports Control Flow Guard.
+pub const IMAGE_DLLCHARACTERISTICS_GUARD_CF: u16 = 0x4000;
+
+/// Terminal Server aware.
+pub const IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE: u16 = 0x8000;
+
+pub const OptionalHeaderPE32 = extern struct {
     magic: u16,
     major_linker_version: u8,
     minor_linker_version: u8,
@@ -80,4 +116,58 @@ pub const OptionalHeader = extern struct {
     size_of_uninitialized_data: u32,
     address_of_entry_point: u32,
     base_of_code: u32,
+    base_of_data: u32,
+    image_base: u32,
+    section_alignment: u32,
+    file_alignment: u32,
+    major_operating_system_version: u16,
+    minor_operating_system_version: u16,
+    major_image_version: u16,
+    minor_image_version: u16,
+    major_subsystem_version: u16,
+    minor_subsystem_version: u16,
+    win32_version_value: u32,
+    size_of_image: u32,
+    size_of_headers: u32,
+    checksum: u32,
+    subsystem: u16,
+    dll_characteristics: u16,
+    size_of_stack_reserve: u32,
+    size_of_stack_commit: u32,
+    size_of_heap_reserve: u32,
+    size_of_heap_commit: u32,
+    loader_flags: u32,
+    number_of_rva_and_sizes: u32,
+};
+
+pub const OptionalHeaderPE64 = extern struct {
+    magic: u16,
+    major_linker_version: u8,
+    minor_linker_version: u8,
+    size_of_code: u32,
+    size_of_initialized_data: u32,
+    size_of_uninitialized_data: u32,
+    address_of_entry_point: u32,
+    base_of_code: u32,
+    image_base: u64,
+    section_alignment: u32,
+    file_alignment: u32,
+    major_operating_system_version: u16,
+    minor_operating_system_version: u16,
+    major_image_version: u16,
+    minor_image_version: u16,
+    major_subsystem_version: u16,
+    minor_subsystem_version: u16,
+    win32_version_value: u32,
+    size_of_image: u32,
+    size_of_headers: u32,
+    checksum: u32,
+    subsystem: u16,
+    dll_characteristics: u16,
+    size_of_stack_reserve: u64,
+    size_of_stack_commit: u64,
+    size_of_heap_reserve: u64,
+    size_of_heap_commit: u64,
+    loader_flags: u32,
+    number_of_rva_and_sizes: u32,
 };

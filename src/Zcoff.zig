@@ -56,23 +56,33 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
         try writer.writeAll("File type: EXECUTABLE IMAGE\n\n");
     } else {
         try writer.writeAll("No PE signature found\n\n");
-        try writer.writeAll("File type: OBJECT FILE\n\n");
+        try writer.writeAll("File type: COFF OBJECT\n\n");
         try stream.seekTo(0);
     }
 
     // COFF header (object and image)
     const coff_header = try reader.readStruct(coff.CoffHeader);
     try writer.writeAll("FILE HEADER VALUES\n");
-    try writer.print("{x: >20} machine ({s})\n", .{
-        coff_header.machine,
-        @tagName(@intToEnum(coff.MachineType, coff_header.machine)),
-    });
-    try writer.print("{d: >20} number of sections\n", .{coff_header.number_of_sections});
-    try writer.print("{x: >20} time date stamp\n", .{coff_header.time_date_stamp});
-    try writer.print("{x: >20} file pointer to symbol table\n", .{coff_header.pointer_to_symbol_table});
-    try writer.print("{d: >20} number of symbols\n", .{coff_header.number_of_symbols});
-    try writer.print("{x: >20} size of optional header\n", .{coff_header.size_of_optional_header});
-    try writer.print("{d: >20} characteristics\n", .{coff_header.characteristics});
+
+    {
+        try writer.print("{x: >20} machine ({s})\n", .{
+            coff_header.machine,
+            @tagName(@intToEnum(coff.MachineType, coff_header.machine)),
+        });
+
+        const fields = std.meta.fields(coff.CoffHeader);
+        inline for (&[_][]const u8{
+            "number of sections",
+            "time date stamp",
+            "file pointer to symbol table",
+            "number of symbols",
+            "size of optional header",
+            "characteristics",
+        }) |desc, i| {
+            const field = fields[i + 1];
+            try writer.print("{x: >20} {s}\n", .{ @field(coff_header, field.name), desc });
+        }
+    }
 
     inline for (&[_]struct { flag: u16, desc: []const u8 }{
         .{ .flag = coff.IMAGE_FILE_RELOCS_STRIPPED, .desc = "Relocs stripped" },
@@ -93,6 +103,130 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
         .{ .flag = coff.IMAGE_FILE_BYTES_REVERSED_HI, .desc = "Big endian" },
     }) |next| {
         if (coff_header.characteristics & next.flag != 0) {
+            try writer.print("{s: >22} {s}\n", .{ "", next.desc });
+        }
+    }
+    try writer.writeByte('\n');
+
+    if (coff_header.size_of_optional_header > 0) {
+        try writer.writeAll("OPTIONAL HEADER VALUES\n");
+        const magic = try reader.readIntLittle(u16);
+        try stream.seekBy(-2);
+        switch (magic) {
+            coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC => {
+                const pe_header = try reader.readStruct(coff.OptionalHeaderPE32);
+                const fields = std.meta.fields(coff.OptionalHeaderPE32);
+                inline for (&[_][]const u8{
+                    "magic",
+                    "linker version (major)",
+                    "linker version (minor)",
+                    "size of code",
+                    "size of initialized data",
+                    "size of uninitialized data",
+                    "entry point",
+                    "base of code",
+                    "base of data",
+                    "image base",
+                    "section alignment",
+                    "file alignment",
+                    "OS version (major)",
+                    "OS version (minor)",
+                    "image version (major)",
+                    "image version (minor)",
+                    "subsystem version (major)",
+                    "subsystem version (minor)",
+                    "Win32 version",
+                    "size of image",
+                    "size of headers",
+                    "checksum",
+                    "subsystem",
+                    "DLL characteristics",
+                    "size of stack reserve",
+                    "size of stack commit",
+                    "size of heap reserve",
+                    "size of heap commit",
+                    "loader flags",
+                    "number of RVA and sizes",
+                }) |desc, i| {
+                    const field = fields[i];
+                    try writer.print("{x: >20} {s}", .{ @field(pe_header, field.name), desc });
+                    if (mem.eql(u8, field.name, "magic")) {
+                        try writer.writeAll(" # (PE32)");
+                        try writer.writeByte('\n');
+                    } else if (mem.eql(u8, field.name, "dll_characteristics")) {
+                        try writer.writeByte('\n');
+                        try printDllCharacteristics(pe_header.dll_characteristics, writer);
+                    } else try writer.writeByte('\n');
+                }
+            },
+            coff.IMAGE_NT_OPTIONAL_HDR64_MAGIC => {
+                const pe_header = try reader.readStruct(coff.OptionalHeaderPE64);
+                const fields = std.meta.fields(coff.OptionalHeaderPE64);
+                inline for (&[_][]const u8{
+                    "magic",
+                    "linker version (major)",
+                    "linker version (minor)",
+                    "size of code",
+                    "size of initialized data",
+                    "size of uninitialized data",
+                    "entry point",
+                    "base of code",
+                    "image base",
+                    "section alignment",
+                    "file alignment",
+                    "OS version (major)",
+                    "OS version (minor)",
+                    "image version (major)",
+                    "image version (minor)",
+                    "subsystem version (major)",
+                    "subsystem version (minor)",
+                    "Win32 version",
+                    "size of image",
+                    "size of headers",
+                    "checksum",
+                    "subsystem",
+                    "DLL characteristics",
+                    "size of stack reserve",
+                    "size of stack commit",
+                    "size of heap reserve",
+                    "size of heap commit",
+                    "loader flags",
+                    "number of directories",
+                }) |desc, i| {
+                    const field = fields[i];
+                    try writer.print("{x: >20} {s}", .{ @field(pe_header, field.name), desc });
+                    if (mem.eql(u8, field.name, "magic")) {
+                        try writer.writeAll(" # (PE32+)");
+                        try writer.writeByte('\n');
+                    } else if (mem.eql(u8, field.name, "dll_characteristics")) {
+                        try writer.writeByte('\n');
+                        try printDllCharacteristics(pe_header.dll_characteristics, writer);
+                    } else try writer.writeByte('\n');
+                }
+            },
+            else => {
+                std.log.err("unknown PE optional header magic: {x}", .{magic});
+                return error.UnknownPEOptionalHeaderMagic;
+            },
+        }
+    }
+}
+
+fn printDllCharacteristics(bitset: u16, writer: anytype) !void {
+    inline for (&[_]struct { flag: u16, desc: []const u8 }{
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA, .desc = "High Entropy Virtual Address" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE, .desc = "Dynamic base" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY, .desc = "Force integrity" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NX_COMPAT, .desc = "NX compatible" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NO_ISOLATION, .desc = "No isolation" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NO_SEH, .desc = "No structured exception handling" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NO_BIND, .desc = "No bind" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_APPCONTAINER, .desc = "AppContainer" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_WDM_DRIVER, .desc = "WDM Driver" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_GUARD_CF, .desc = "Control Flow Guard" },
+        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE, .desc = "Terminal Server Aware" },
+    }) |next| {
+        if (bitset & next.flag != 0) {
             try writer.print("{s: >22} {s}\n", .{ "", next.desc });
         }
     }
