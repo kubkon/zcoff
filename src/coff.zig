@@ -220,3 +220,177 @@ pub const ImageDataDirectory = extern struct {
     virtual_address: u32,
     size: u32,
 };
+
+pub const SectionHeader = extern struct {
+    name: [8]u8,
+    virtual_size: u32,
+    virtual_address: u32,
+    size_of_raw_data: u32,
+    pointer_to_raw_data: u32,
+    pointer_to_relocations: u32,
+    pointer_to_linenumbers: u32,
+    number_of_relocations: u16,
+    number_of_linenumbers: u16,
+    flags: u32,
+
+    pub fn getName(self: *const SectionHeader) ?[]const u8 {
+        if (self.name[0] == '/') return null;
+        const len = std.mem.indexOfScalar(u8, &self.name, @as(u8, 0)) orelse self.name.len;
+        return self.name[0..len];
+    }
+
+    pub fn getNameOffset(self: SectionHeader) ?u32 {
+        if (self.name[0] != '/') return null;
+        const len = std.mem.indexOfScalar(u8, &self.name, @as(u8, 0)) orelse self.name.len;
+        const offset = std.fmt.parseInt(u32, self.name[1..len], 10) catch unreachable;
+        return offset;
+    }
+
+    /// Applicable only to section headers in COFF objects.
+    pub fn getAlignment(self: SectionHeader) ?u16 {
+        const align_flag = @intCast(u16, (self.flags & IMAGE_SCN_ALIGN_MASK) >> comptime @ctz(u32, IMAGE_SCN_ALIGN_MASK));
+        if (align_flag == 0) return null;
+        return std.math.powi(u16, 2, align_flag - 1) catch unreachable;
+    }
+};
+
+/// The section should not be padded to the next boundary.
+/// This flag is obsolete and is replaced by IMAGE_SCN_ALIGN_1BYTES.
+/// This is valid only for object files.
+pub const IMAGE_SCN_TYPE_NO_PAD: u32 = 0x8;
+
+/// The section contains executable code.
+pub const IMAGE_SCN_CNT_CODE: u32 = 0x20;
+
+/// The section contains initialized data.
+pub const IMAGE_SCN_CNT_INITIALIZED_DATA: u32 = 0x40;
+
+/// The section contains uninitialized data.
+pub const IMAGE_SCN_CNT_UNINITIALIZED_DATA: u32 = 0x80;
+
+/// Reserved for future use.
+pub const IMAGE_SCN_LNK_OTHER: u32 = 0x100;
+
+/// The section contains comments or other information.
+/// The .drectve section has this type.
+/// This is valid for object files only.
+pub const IMAGE_SCN_LNK_INFO: u32 = 0x200;
+
+/// The section will not become part of the image.
+/// This is valid only for object files.
+pub const IMAGE_SCN_LNK_REMOVE: u32 = 0x800;
+
+/// The section contains COMDAT data.
+/// For more information, see COMDAT Sections (Object Only).
+/// This is valid only for object files.
+pub const IMAGE_SCN_LNK_COMDAT: u32 = 0x1000;
+
+/// The section contains data referenced through the global pointer (GP).
+pub const IMAGE_SCN_GPREL: u32 = 0x8000;
+
+/// Reserved for future use.
+pub const IMAGE_SCN_MEM_PURGEABLE: u32 = 0x20000;
+
+/// Reserved for future use.
+pub const IMAGE_SCN_MEM_16BIT: u32 = 0x20000;
+
+/// Reserved for future use.
+pub const IMAGE_SCN_MEM_LOCKED: u32 = 0x40000;
+
+/// Reserved for future use.
+pub const IMAGE_SCN_MEM_PRELOAD: u32 = 0x80000;
+
+pub const IMAGE_SCN_ALIGN_MASK: u32 = 0xf00000;
+
+/// Align data on a 1-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_1BYTES: u32 = 0x100000;
+
+/// Align data on a 2-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_2BYTES: u32 = 0x200000;
+
+/// Align data on a 4-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_4BYTES: u32 = 0x300000;
+
+/// Align data on an 8-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_8BYTES: u32 = 0x400000;
+
+/// Align data on a 16-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_16BYTES: u32 = 0x500000;
+
+/// Align data on a 32-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_32BYTES: u32 = 0x600000;
+
+/// Align data on a 64-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_64BYTES: u32 = 0x700000;
+
+/// Align data on a 128-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_128BYTES: u32 = 0x800000;
+
+/// Align data on a 256-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_256BYTES: u32 = 0x900000;
+
+/// Align data on a 512-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_512BYTES: u32 = 0xA00000;
+
+/// Align data on a 1024-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_1024BYTES: u32 = 0xB00000;
+
+/// Align data on a 2048-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_2048BYTES: u32 = 0xC00000;
+
+/// Align data on a 4096-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_4096BYTES: u32 = 0xD00000;
+
+/// Align data on an 8192-byte boundary.
+/// Valid only for object files.
+pub const IMAGE_SCN_ALIGN_8192BYTES: u32 = 0xE00000;
+
+/// The section contains extended relocations.
+pub const IMAGE_SCN_LNK_NRELOC_OVFL: u32 = 0x1000000;
+
+/// The section can be discarded as needed.
+pub const IMAGE_SCN_MEM_DISCARDABLE: u32 = 0x2000000;
+
+/// The section cannot be cached.
+pub const IMAGE_SCN_MEM_NOT_CACHED: u32 = 0x4000000;
+
+/// The section is not pageable.
+pub const IMAGE_SCN_MEM_NOT_PAGED: u32 = 0x8000000;
+
+/// The section can be shared in memory.
+pub const IMAGE_SCN_MEM_SHARED: u32 = 0x10000000;
+
+/// The section can be executed as code.
+pub const IMAGE_SCN_MEM_EXECUTE: u32 = 0x20000000;
+
+/// The section can be read.
+pub const IMAGE_SCN_MEM_READ: u32 = 0x40000000;
+
+/// The section can be written to.
+pub const IMAGE_SCN_MEM_WRITE: u32 = 0x80000000;
+
+pub const Symbol = struct {
+    name: [8]u8,
+    value: u32,
+    section_number: u16,
+    @"type": u16,
+    storage_class: u8,
+    number_of_aux_symbols: u8,
+
+    pub fn sizeOf() usize {
+        return 18;
+    }
+};

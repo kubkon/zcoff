@@ -10,6 +10,8 @@ const Allocator = mem.Allocator;
 
 gpa: Allocator,
 data: ?[]const u8 = null,
+is_image: bool = false,
+coff_header_offset: usize = 0,
 
 const pe_offset: usize = 0x3c;
 const pe_magic: []const u8 = "PE\x00\x00";
@@ -29,14 +31,19 @@ pub fn parse(self: *Zcoff, file: fs.File) !void {
     const stat = try file.stat();
     self.data = try file.readToEndAlloc(self.gpa, stat.size);
 
-    // Do some basic validation upfront
     var stream = std.io.fixedBufferStream(self.data.?);
     const reader = stream.reader();
+    try stream.seekTo(pe_offset);
+    const coff_header_offset = try reader.readByte();
+    try stream.seekTo(coff_header_offset);
+    var buf: [4]u8 = undefined;
+    try reader.readNoEof(&buf);
+    self.is_image = mem.eql(u8, pe_magic, &buf);
 
-    var image_magic_buf: [4]u8 = undefined;
-    const image_magic = try parseImageMagicNumber(&image_magic_buf, &stream);
-    if (mem.eql(u8, pe_magic, image_magic)) {
-        const coff_header = try reader.readStruct(coff.CoffHeader);
+    // Do some basic validation upfront
+    if (self.is_image) {
+        self.coff_header_offset = coff_header_offset + 4;
+        const coff_header = self.getHeader();
         if (coff_header.size_of_optional_header == 0) {
             std.log.err("Required PE header missing for image file", .{});
             return error.MalformedImageFile;
@@ -45,24 +52,16 @@ pub fn parse(self: *Zcoff, file: fs.File) !void {
 }
 
 pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
-    var stream = std.io.fixedBufferStream(self.data.?);
-    const reader = stream.reader();
-
-    var image_magic_buf: [4]u8 = undefined;
-    const image_magic = try parseImageMagicNumber(&image_magic_buf, &stream);
-    const is_image = mem.eql(u8, pe_magic, image_magic);
-
-    if (is_image) {
+    const coff_header = self.getHeader();
+    if (self.is_image) {
         try writer.writeAll("PE signature found\n\n");
         try writer.writeAll("File type: EXECUTABLE IMAGE\n\n");
     } else {
         try writer.writeAll("No PE signature found\n\n");
         try writer.writeAll("File type: COFF OBJECT\n\n");
-        try stream.seekTo(0);
     }
 
     // COFF header (object and image)
-    const coff_header = try reader.readStruct(coff.CoffHeader);
     try writer.writeAll("FILE HEADER VALUES\n");
 
     {
@@ -110,6 +109,12 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
     try writer.writeByte('\n');
 
     if (coff_header.size_of_optional_header > 0) {
+        var stream = std.io.fixedBufferStream(self.data.?);
+        const reader = stream.reader();
+
+        const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
+        try stream.seekTo(offset);
+
         try writer.writeAll("OPTIONAL HEADER VALUES\n");
         const magic = try reader.readIntLittle(u16);
         try stream.seekBy(-2);
@@ -256,8 +261,80 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
         }
 
         assert(counting_stream.bytes_read == coff_header.size_of_optional_header);
+    }
 
-        // Section table
+    // Section table
+    if (coff_header.number_of_sections > 0) {
+        var stream = std.io.fixedBufferStream(self.data.?);
+        const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader) + coff_header.size_of_optional_header;
+        try stream.seekTo(offset);
+        const reader = stream.reader();
+
+        try writer.writeByte('\n');
+
+        const strtab = self.getStrtab();
+
+        const fields = std.meta.fields(coff.SectionHeader);
+        var i: usize = 0;
+        while (i < coff_header.number_of_sections) : (i += 1) {
+            try writer.print("SECTION HEADER #{d}\n", .{i});
+
+            const sect_hdr = try reader.readStruct(coff.SectionHeader);
+            const name = sect_hdr.getName() orelse blk: {
+                const name_offset = sect_hdr.getNameOffset() orelse return error.MalformedSectionHeader;
+                break :blk strtab.?.get(name_offset);
+            };
+
+            try writer.print("{s: >20} name\n", .{name});
+
+            inline for (&[_][]const u8{
+                "virtual size",
+                "virtual address",
+                "size of raw data",
+                "file pointer to raw data",
+                "file pointer to relocation table",
+                "file pointer to line numbers",
+                "number of relocations",
+                "number of line numbers",
+                "flags",
+            }) |desc, field_i| {
+                const field = fields[field_i + 1];
+                try writer.print("{x: >20} {s}\n", .{ @field(sect_hdr, field.name), desc });
+                if (mem.eql(u8, field.name, "flags")) {
+                    try printSectionFlags(sect_hdr.flags, writer);
+                    if (sect_hdr.getAlignment()) |alignment| {
+                        try writer.print("{s: >22} {d} byte align\n", .{ "", alignment });
+                    }
+                }
+            }
+
+            try writer.writeByte('\n');
+        }
+    }
+}
+
+fn printSectionFlags(bitset: u32, writer: anytype) !void {
+    inline for (&[_]struct { flag: u32, desc: []const u8 }{
+        .{ .flag = coff.IMAGE_SCN_TYPE_NO_PAD, .desc = "No padding" },
+        .{ .flag = coff.IMAGE_SCN_CNT_CODE, .desc = "Code" },
+        .{ .flag = coff.IMAGE_SCN_CNT_INITIALIZED_DATA, .desc = "Initialized data" },
+        .{ .flag = coff.IMAGE_SCN_CNT_UNINITIALIZED_DATA, .desc = "Uninitialized data" },
+        .{ .flag = coff.IMAGE_SCN_LNK_INFO, .desc = "Comments" },
+        .{ .flag = coff.IMAGE_SCN_LNK_REMOVE, .desc = "Discard" },
+        .{ .flag = coff.IMAGE_SCN_LNK_COMDAT, .desc = "COMDAT" },
+        .{ .flag = coff.IMAGE_SCN_GPREL, .desc = "GP referenced" },
+        .{ .flag = coff.IMAGE_SCN_LNK_NRELOC_OVFL, .desc = "Extended relocations" },
+        .{ .flag = coff.IMAGE_SCN_MEM_DISCARDABLE, .desc = "Discardable" },
+        .{ .flag = coff.IMAGE_SCN_MEM_NOT_CACHED, .desc = "Not cached" },
+        .{ .flag = coff.IMAGE_SCN_MEM_NOT_PAGED, .desc = "Not paged" },
+        .{ .flag = coff.IMAGE_SCN_MEM_SHARED, .desc = "Shared" },
+        .{ .flag = coff.IMAGE_SCN_MEM_EXECUTE, .desc = "Execute" },
+        .{ .flag = coff.IMAGE_SCN_MEM_READ, .desc = "Read" },
+        .{ .flag = coff.IMAGE_SCN_MEM_WRITE, .desc = "Write" },
+    }) |next| {
+        if (bitset & next.flag != 0) {
+            try writer.print("{s: >22} {s}\n", .{ "", next.desc });
+        }
     }
 }
 
@@ -281,11 +358,24 @@ fn printDllCharacteristics(bitset: u16, writer: anytype) !void {
     }
 }
 
-fn parseImageMagicNumber(buf: *[4]u8, stream: anytype) ![]const u8 {
-    const reader = stream.reader();
-    try stream.seekTo(pe_offset);
-    const pe_header_offset = try reader.readByte();
-    try stream.seekTo(pe_header_offset);
-    try reader.readNoEof(buf);
-    return buf[0..];
+fn getHeader(self: *Zcoff) coff.CoffHeader {
+    return @ptrCast(*align(1) coff.CoffHeader, self.data.?[self.coff_header_offset..][0..@sizeOf(coff.CoffHeader)]).*;
+}
+
+const Strtab = struct {
+    buffer: []const u8,
+
+    fn get(self: Strtab, off: u32) []const u8 {
+        assert(off < self.buffer.len);
+        return mem.sliceTo(@ptrCast([*:0]const u8, self.buffer.ptr + off), 0);
+    }
+};
+
+fn getStrtab(self: *Zcoff) ?Strtab {
+    const coff_header = self.getHeader();
+    if (coff_header.pointer_to_symbol_table == 0) return null;
+
+    const offset = coff_header.pointer_to_symbol_table + coff.Symbol.sizeOf() * coff_header.number_of_symbols;
+    const size = mem.readIntLittle(u32, self.data.?[offset..][0..4]);
+    return .{ .buffer = self.data.?[offset..][0..size] };
 }
