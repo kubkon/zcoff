@@ -12,7 +12,8 @@ pub fn main() !void {
 
     const params = comptime [_]clap.Param(clap.Help){
         clap.parseParam("--help          Display this help and exit.") catch unreachable,
-        clap.parseParam("--all           Print all headers.") catch unreachable,
+        clap.parseParam("--headers       Print headers.") catch unreachable,
+        clap.parseParam("--symbols       Print symbol table.") catch unreachable,
         clap.parseParam("<FILE>") catch unreachable,
     };
 
@@ -42,9 +43,16 @@ pub fn main() !void {
 
     try zcoff.parse(file);
 
-    if (res.args.all) {
+    var selected = false;
+    if (res.args.headers) {
         try zcoff.printHeaders(stdout);
-    } else {
+        selected = true;
+    }
+    if (res.args.symbols) {
+        try zcoff.printSymbols(stdout);
+        selected = true;
+    }
+    if (!selected) {
         return printUsageWithHelp(stderr, params[0..]);
     }
 }

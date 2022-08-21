@@ -358,6 +358,12 @@ fn printDllCharacteristics(bitset: u16, writer: anytype) !void {
     }
 }
 
+pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
+    _ = self;
+    _ = writer;
+    return error.Todo;
+}
+
 fn getHeader(self: *Zcoff) coff.CoffHeader {
     return @ptrCast(*align(1) coff.CoffHeader, self.data.?[self.coff_header_offset..][0..@sizeOf(coff.CoffHeader)]).*;
 }
