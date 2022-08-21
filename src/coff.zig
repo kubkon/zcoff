@@ -107,6 +107,50 @@ pub const IMAGE_DLLCHARACTERISTICS_GUARD_CF: u16 = 0x4000;
 /// Terminal Server aware.
 pub const IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE: u16 = 0x8000;
 
+pub const Subsystem = enum(u16) {
+    /// An unknown subsystem
+    UNKNOWN = 0,
+
+    /// Device drivers and native Windows processes
+    NATIVE = 1,
+
+    /// The Windows graphical user interface (GUI) subsystem
+    WINDOWS_GUI = 2,
+
+    /// The Windows character subsystem
+    WINDOWS_CUI = 3,
+
+    /// The OS/2 character subsystem
+    OS2_CUI = 5,
+
+    /// The Posix character subsystem
+    POSIX_CUI = 7,
+
+    /// Native Win9x driver
+    NATIVE_WINDOWS = 8,
+
+    /// Windows CE
+    WINDOWS_CE_GUI = 9,
+
+    /// An Extensible Firmware Interface (EFI) application
+    EFI_APPLICATION = 10,
+
+    /// An EFI driver with boot services
+    EFI_BOOT_SERVICE_DRIVER = 11,
+
+    /// An EFI driver with run-time services
+    EFI_RUNTIME_DRIVER = 12,
+
+    /// An EFI ROM image
+    EFI_ROM = 13,
+
+    /// XBOX
+    XBOX = 14,
+
+    /// Windows boot application
+    WINDOWS_BOOT_APPLICATION = 16,
+};
+
 pub const OptionalHeaderPE32 = extern struct {
     magic: u16,
     major_linker_version: u8,

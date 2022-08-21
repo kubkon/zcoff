@@ -156,6 +156,9 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     } else if (mem.eql(u8, field.name, "dll_characteristics")) {
                         try writer.writeByte('\n');
                         try printDllCharacteristics(pe_header.dll_characteristics, writer);
+                    } else if (mem.eql(u8, field.name, "subsystem")) {
+                        try writer.print(" # ({s})", .{@tagName(@intToEnum(coff.Subsystem, pe_header.subsystem))});
+                        try writer.writeByte('\n');
                     } else try writer.writeByte('\n');
                 }
             },
@@ -201,6 +204,9 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     } else if (mem.eql(u8, field.name, "dll_characteristics")) {
                         try writer.writeByte('\n');
                         try printDllCharacteristics(pe_header.dll_characteristics, writer);
+                    } else if (mem.eql(u8, field.name, "subsystem")) {
+                        try writer.print(" # ({s})", .{@tagName(@intToEnum(coff.Subsystem, pe_header.subsystem))});
+                        try writer.writeByte('\n');
                     } else try writer.writeByte('\n');
                 }
             },
