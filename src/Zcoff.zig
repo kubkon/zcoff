@@ -282,18 +282,28 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                 "file pointer to line numbers",
                 "number of relocations",
                 "number of line numbers",
-                "flags",
             }) |desc, field_i| {
                 const field = fields[field_i + 1];
                 try writer.print("{x: >20} {s}\n", .{ @field(sect_hdr, field.name), desc });
-                if (mem.eql(u8, field.name, "flags")) {
-                    try printSectionFlags(sect_hdr.flags, writer);
-                    if (sect_hdr.getAlignment()) |alignment| {
-                        try writer.print("{s: >22} {d} byte align\n", .{ "", alignment });
+                // if (mem.eql(u8, field.name, "flags")) {
+                //     try printSectionFlags(sect_hdr.flags, writer);
+                //     if (sect_hdr.getAlignment()) |alignment| {
+                //     }
+                // }
+            }
+
+            try writer.print("{x: >20} flags\n", .{@bitCast(u32, sect_hdr.flags)});
+            const flag_fields = std.meta.fields(coff.SectionHeaderFlags);
+            inline for (flag_fields) |flag_field| {
+                if (flag_field.field_type == u1) {
+                    if (@field(sect_hdr.flags, flag_field.name) == 0b1) {
+                        try writer.print("{s: >22} {s}\n", .{ "", flag_field.name });
                     }
                 }
             }
-
+            if (sect_hdr.getAlignment()) |alignment| {
+                try writer.print("{s: >22} {d} byte align\n", .{ "", alignment });
+            }
             try writer.writeByte('\n');
         }
     }
