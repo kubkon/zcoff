@@ -233,7 +233,7 @@ pub const SectionHeader = extern struct {
     number_of_linenumbers: u16,
     flags: u32,
 
-    pub fn getName(self: *const SectionHeader) ?[]const u8 {
+    pub fn getName(self: *align(1) const SectionHeader) ?[]const u8 {
         if (self.name[0] == '/') return null;
         const len = std.mem.indexOfScalar(u8, &self.name, @as(u8, 0)) orelse self.name.len;
         return self.name[0..len];
@@ -394,7 +394,7 @@ pub const Symbol = struct {
         return 18;
     }
 
-    pub fn getName(self: Symbol) ?[]const u8 {
+    pub fn getName(self: *const Symbol) ?[]const u8 {
         if (std.mem.eql(u8, self.name[0..4], "\x00\x00\x00\x00")) return null;
         const len = std.mem.indexOfScalar(u8, &self.name, @as(u8, 0)) orelse self.name.len;
         return self.name[0..len];
@@ -583,3 +583,59 @@ pub const StorageClass = enum(u8) {
     /// For more information, see CLR Token Definition (Object Only).
     CLR_TOKEN = 107,
 };
+
+pub const FunctionDefinition = struct {
+    /// The symbol-table index of the corresponding .bf (begin function) symbol record.
+    tag_index: u32,
+
+    /// The size of the executable code for the function itself.
+    /// If the function is in its own section, the SizeOfRawData in the section header is greater or equal to this field,
+    /// depending on alignment considerations.
+    total_size: u32,
+
+    /// The file offset of the first COFF line-number entry for the function, or zero if none exists.
+    pointer_to_linenumber: u32,
+
+    /// The symbol-table index of the record for the next function.
+    /// If the function is the last in the symbol table, this field is set to zero.
+    pointer_to_next_function: u32,
+
+    unused: [2]u8,
+};
+
+pub const SectionDefinition = struct {
+    /// The size of section data; the same as SizeOfRawData in the section header.
+    length: u32,
+
+    /// The number of relocation entries for the section.
+    number_of_relocations: u16,
+
+    /// The number of line-number entries for the section.
+    number_of_linenumbers: u16,
+
+    /// The checksum for communal data. It is applicable if the IMAGE_SCN_LNK_COMDAT flag is set in the section header.
+    checksum: u32,
+
+    /// One-based index into the section table for the associated section. This is used when the COMDAT selection setting is 5.
+    number: u16,
+
+    /// The COMDAT selection number. This is applicable if the section is a COMDAT section.
+    selection: u8,
+
+    unused: [3]u8,
+};
+
+pub const FileDefinition = struct {
+    /// An ANSI string that gives the name of the source file.
+    /// This is padded with nulls if it is less than the maximum length.
+    file_name: [18]u8,
+
+    pub fn getFileName(self: *const FileDefinition) []const u8 {
+        const len = std.mem.indexOfScalar(u8, &self.file_name, @as(u8, 0)) orelse self.file_name.len;
+        return self.file_name[0..len];
+    }
+};
+
+// pub const WeakExternalDefinition = struct {
+
+// };

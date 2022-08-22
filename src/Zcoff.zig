@@ -265,26 +265,14 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
 
     // Section table
     if (coff_header.number_of_sections > 0) {
-        var stream = std.io.fixedBufferStream(self.data.?);
-        const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader) + coff_header.size_of_optional_header;
-        try stream.seekTo(offset);
-        const reader = stream.reader();
-
         try writer.writeByte('\n');
-
-        const strtab = self.getStrtab();
-
+        const sections = self.getSectionHeaders();
         const fields = std.meta.fields(coff.SectionHeader);
-        var i: usize = 0;
-        while (i < coff_header.number_of_sections) : (i += 1) {
+
+        for (sections) |*sect_hdr, i| {
             try writer.print("SECTION HEADER #{d}\n", .{i});
 
-            const sect_hdr = try reader.readStruct(coff.SectionHeader);
-            const name = sect_hdr.getName() orelse blk: {
-                const name_offset = sect_hdr.getNameOffset() orelse return error.MalformedSectionHeader;
-                break :blk strtab.?.get(name_offset);
-            };
-
+            const name = self.getSectionName(sect_hdr);
             try writer.print("{s: >20} name\n", .{name});
 
             inline for (&[_][]const u8{
@@ -365,11 +353,13 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
 
     try writer.writeAll("COFF SYMBOL TABLE\n");
 
+    const sections = self.getSectionHeaders();
     const strtab = self.getStrtab().?;
     var slice = symtab.slice(0, null);
 
     var index: usize = 0;
     var aux_counter: usize = 0;
+    var aux_tag: ?Symtab.Tag = null;
     while (slice.next()) |sym| {
         if (aux_counter == 0) {
             try writer.print("{d:0>3} {d:0>8} ", .{ index, sym.value });
@@ -390,13 +380,57 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
                 @tagName(sym.storage_class),
                 name,
             });
+
+            aux_tag = aux_tag: {
+                switch (sym.section_number) {
+                    .UNDEFINED, .ABSOLUTE => {},
+                    .DEBUG => {
+                        if (sym.storage_class == .FILE) {
+                            break :aux_tag .file_def;
+                        }
+                    },
+                    else => {
+                        if (sym.storage_class == .EXTERNAL and sym.@"type".complex_type == .FUNCTION) {
+                            break :aux_tag .func_def;
+                        }
+                        if (sym.storage_class == .STATIC) {
+                            for (sections) |*sect| {
+                                const sect_name = self.getSectionName(sect);
+                                if (mem.eql(u8, sect_name, name)) {
+                                    break :aux_tag .sect_def;
+                                }
+                            }
+                        }
+                    },
+                }
+                break :aux_tag null;
+            };
+
             aux_counter = sym.number_of_aux_symbols;
         } else {
+            if (aux_tag) |tag| switch (symtab.at(index, tag)) {
+                .file_def => |*file_def| {
+                    try writer.print("     {s}\n", .{file_def.getFileName()});
+                },
+                .sect_def => |sect_def| {
+                    // TODO COMDAT section
+                    try writer.print("     Section length {x: >4}, #relocs {x: >4}, #linenums {x: >4}, checksum {x: >8}\n", .{
+                        sect_def.length,
+                        sect_def.number_of_relocations,
+                        sect_def.number_of_linenumbers,
+                        sect_def.checksum,
+                    });
+                },
+                else => {},
+            };
+
             aux_counter -= 1;
         }
 
         index += 1;
     }
+
+    try writer.print("\nString table size = 0x{x} bytes\n", .{strtab.buffer.len});
 }
 
 fn getHeader(self: *Zcoff) coff.CoffHeader {
@@ -410,14 +444,35 @@ const Symtab = struct {
         return @divExact(self.buffer.len, coff.Symbol.sizeOf());
     }
 
+    const Tag = enum {
+        symbol,
+        func_def,
+        // func_def_di,
+        // weak_ext,
+        file_def,
+        sect_def,
+    };
+
+    const Record = union(Tag) {
+        symbol: coff.Symbol,
+        func_def: coff.FunctionDefinition,
+        file_def: coff.FileDefinition,
+        sect_def: coff.SectionDefinition,
+    };
+
     /// Lives as long as Symtab instance.
-    fn at(self: Symtab, index: usize) coff.Symbol {
+    fn at(self: Symtab, index: usize, tag: Tag) Record {
         const offset = index * coff.Symbol.sizeOf();
         const raw = self.buffer[offset..][0..coff.Symbol.sizeOf()];
-        return rawAsSymbol(raw);
+        return switch (tag) {
+            .symbol => .{ .symbol = asSymbol(raw) },
+            .func_def => .{ .func_def = asFuncDef(raw) },
+            .file_def => .{ .file_def = asFileDef(raw) },
+            .sect_def => .{ .sect_def = asSectDef(raw) },
+        };
     }
 
-    fn rawAsSymbol(raw: []const u8) coff.Symbol {
+    fn asSymbol(raw: []const u8) coff.Symbol {
         return .{
             .name = raw[0..8].*,
             .value = mem.readIntLittle(u32, raw[8..12]),
@@ -425,6 +480,34 @@ const Symtab = struct {
             .@"type" = @bitCast(coff.SymType, mem.readIntLittle(u16, raw[14..16])),
             .storage_class = @intToEnum(coff.StorageClass, raw[16]),
             .number_of_aux_symbols = raw[17],
+        };
+    }
+
+    fn asFuncDef(raw: []const u8) coff.FunctionDefinition {
+        return .{
+            .tag_index = mem.readIntLittle(u32, raw[0..4]),
+            .total_size = mem.readIntLittle(u32, raw[4..8]),
+            .pointer_to_linenumber = mem.readIntLittle(u32, raw[8..12]),
+            .pointer_to_next_function = mem.readIntLittle(u32, raw[12..16]),
+            .unused = raw[16..18].*,
+        };
+    }
+
+    fn asFileDef(raw: []const u8) coff.FileDefinition {
+        return .{
+            .file_name = raw[0..18].*,
+        };
+    }
+
+    fn asSectDef(raw: []const u8) coff.SectionDefinition {
+        return .{
+            .length = mem.readIntLittle(u32, raw[0..4]),
+            .number_of_relocations = mem.readIntLittle(u16, raw[4..6]),
+            .number_of_linenumbers = mem.readIntLittle(u16, raw[6..8]),
+            .checksum = mem.readIntLittle(u32, raw[8..12]),
+            .number = mem.readIntLittle(u16, raw[12..14]),
+            .selection = raw[14],
+            .unused = raw[15..18].*,
         };
     }
 
@@ -436,7 +519,7 @@ const Symtab = struct {
         /// Lives as long as Symtab instance.
         fn next(self: *Slice) ?coff.Symbol {
             if (self.count >= self.num) return null;
-            const sym = rawAsSymbol(self.buffer[0..coff.Symbol.sizeOf()]);
+            const sym = asSymbol(self.buffer[0..coff.Symbol.sizeOf()]);
             self.count += 1;
             self.buffer = self.buffer[coff.Symbol.sizeOf()..];
             return sym;
@@ -476,4 +559,19 @@ fn getStrtab(self: *Zcoff) ?Strtab {
     const offset = coff_header.pointer_to_symbol_table + coff.Symbol.sizeOf() * coff_header.number_of_symbols;
     const size = mem.readIntLittle(u32, self.data.?[offset..][0..4]);
     return .{ .buffer = self.data.?[offset..][0..size] };
+}
+
+fn getSectionHeaders(self: *Zcoff) []align(1) const coff.SectionHeader {
+    const coff_header = self.getHeader();
+    const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader) + coff_header.size_of_optional_header;
+    return @ptrCast([*]align(1) coff.SectionHeader, self.data.?.ptr + offset)[0..coff_header.number_of_sections];
+}
+
+fn getSectionName(self: *Zcoff, sect_hdr: *align(1) const coff.SectionHeader) []const u8 {
+    const name = sect_hdr.getName() orelse blk: {
+        const strtab = self.getStrtab().?;
+        const name_offset = sect_hdr.getNameOffset().?;
+        break :blk strtab.get(name_offset);
+    };
+    return name;
 }
