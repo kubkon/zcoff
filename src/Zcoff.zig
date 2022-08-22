@@ -383,7 +383,12 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
 
             aux_tag = aux_tag: {
                 switch (sym.section_number) {
-                    .UNDEFINED, .ABSOLUTE => {},
+                    .UNDEFINED => {
+                        if (sym.storage_class == .WEAK_EXTERNAL and sym.value == 0) {
+                            break :aux_tag .weak_ext;
+                        }
+                    },
+                    .ABSOLUTE => {},
                     .DEBUG => {
                         if (sym.storage_class == .FILE) {
                             break :aux_tag .file_def;
@@ -409,6 +414,9 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
             aux_counter = sym.number_of_aux_symbols;
         } else {
             if (aux_tag) |tag| switch (symtab.at(index, tag)) {
+                .weak_ext => |weak_ext| {
+                    try writer.print("     Default index {x: >8} {s}\n", .{ weak_ext.tag_index, @tagName(weak_ext.flag) });
+                },
                 .file_def => |*file_def| {
                     try writer.print("     {s}\n", .{file_def.getFileName()});
                 },
@@ -448,7 +456,7 @@ const Symtab = struct {
         symbol,
         func_def,
         // func_def_di,
-        // weak_ext,
+        weak_ext,
         file_def,
         sect_def,
     };
@@ -456,6 +464,7 @@ const Symtab = struct {
     const Record = union(Tag) {
         symbol: coff.Symbol,
         func_def: coff.FunctionDefinition,
+        weak_ext: coff.WeakExternalDefinition,
         file_def: coff.FileDefinition,
         sect_def: coff.SectionDefinition,
     };
@@ -467,6 +476,7 @@ const Symtab = struct {
         return switch (tag) {
             .symbol => .{ .symbol = asSymbol(raw) },
             .func_def => .{ .func_def = asFuncDef(raw) },
+            .weak_ext => .{ .weak_ext = asWeakExtDef(raw) },
             .file_def => .{ .file_def = asFileDef(raw) },
             .sect_def => .{ .sect_def = asSectDef(raw) },
         };
@@ -490,6 +500,14 @@ const Symtab = struct {
             .pointer_to_linenumber = mem.readIntLittle(u32, raw[8..12]),
             .pointer_to_next_function = mem.readIntLittle(u32, raw[12..16]),
             .unused = raw[16..18].*,
+        };
+    }
+
+    fn asWeakExtDef(raw: []const u8) coff.WeakExternalDefinition {
+        return .{
+            .tag_index = mem.readIntLittle(u32, raw[0..4]),
+            .flag = @intToEnum(coff.WeakExternalFlag, mem.readIntLittle(u32, raw[4..8])),
+            .unused = raw[8..18].*,
         };
     }
 

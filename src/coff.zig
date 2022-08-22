@@ -636,6 +636,22 @@ pub const FileDefinition = struct {
     }
 };
 
-// pub const WeakExternalDefinition = struct {
+pub const WeakExternalDefinition = struct {
+    /// The symbol-table index of sym2, the symbol to be linked if sym1 is not found.
+    tag_index: u32,
 
-// };
+    /// A value of IMAGE_WEAK_EXTERN_SEARCH_NOLIBRARY indicates that no library search for sym1 should be performed.
+    /// A value of IMAGE_WEAK_EXTERN_SEARCH_LIBRARY indicates that a library search for sym1 should be performed.
+    /// A value of IMAGE_WEAK_EXTERN_SEARCH_ALIAS indicates that sym1 is an alias for sym2.
+    flag: WeakExternalFlag,
+
+    unused: [10]u8,
+};
+
+// https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/km/ntimage.h
+pub const WeakExternalFlag = enum(u32) {
+    SEARCH_NOLIBRARY = 1,
+    SEARCH_LIBRARY = 2,
+    SEARCH_ALIAS = 3,
+    ANTI_DEPENDENCY = 4,
+};
