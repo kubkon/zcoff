@@ -63,13 +63,8 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
 
     // COFF header (object and image)
     try writer.writeAll("FILE HEADER VALUES\n");
-
+    try writer.print("{x: >20} machine ({s})\n", .{ @enumToInt(coff_header.machine), @tagName(coff_header.machine) });
     {
-        try writer.print("{x: >20} machine ({s})\n", .{
-            coff_header.machine,
-            @tagName(@intToEnum(coff.MachineType, coff_header.machine)),
-        });
-
         const fields = std.meta.fields(coff.CoffHeader);
         inline for (&[_][]const u8{
             "number of sections",
@@ -77,33 +72,36 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
             "file pointer to symbol table",
             "number of symbols",
             "size of optional header",
-            "characteristics",
         }) |desc, i| {
             const field = fields[i + 1];
             try writer.print("{x: >20} {s}\n", .{ @field(coff_header, field.name), desc });
         }
     }
-
-    inline for (&[_]struct { flag: u16, desc: []const u8 }{
-        .{ .flag = coff.IMAGE_FILE_RELOCS_STRIPPED, .desc = "Relocs stripped" },
-        .{ .flag = coff.IMAGE_FILE_EXECUTABLE_IMAGE, .desc = "Executable" },
-        .{ .flag = coff.IMAGE_FILE_LINE_NUMS_STRIPPED, .desc = "COFF line numbers have been removed" },
-        .{ .flag = coff.IMAGE_FILE_LOCAL_SYMS_STRIPPED, .desc = "COFF symbol table entries for local symbols have been removed" },
-        .{ .flag = coff.IMAGE_FILE_AGGRESSIVE_WS_TRIM, .desc = "Aggressively trim working set" },
-        .{ .flag = coff.IMAGE_FILE_LARGE_ADDRESS_AWARE, .desc = "Application can handle > 2-GB addresses" },
-        .{ .flag = coff.IMAGE_FILE_RESERVED, .desc = "Reserved" },
-        .{ .flag = coff.IMAGE_FILE_BYTES_REVERSED_LO, .desc = "Little endian" },
-        .{ .flag = coff.IMAGE_FILE_32BIT_MACHINE, .desc = "32-bit" },
-        .{ .flag = coff.IMAGE_FILE_DEBUG_STRIPPED, .desc = "Debugging information removed" },
-        .{ .flag = coff.IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP, .desc = "Fully load and copy to swap file from removable media" },
-        .{ .flag = coff.IMAGE_FILE_NET_RUN_FROM_SWAP, .desc = "Fully load and copy to swap file from network media" },
-        .{ .flag = coff.IMAGE_FILE_SYSTEM, .desc = "System file" },
-        .{ .flag = coff.IMAGE_FILE_DLL, .desc = "DLL" },
-        .{ .flag = coff.IMAGE_FILE_UP_SYSTEM_ONLY, .desc = "Uniprocessor machine only" },
-        .{ .flag = coff.IMAGE_FILE_BYTES_REVERSED_HI, .desc = "Big endian" },
-    }) |next| {
-        if (coff_header.characteristics & next.flag != 0) {
-            try writer.print("{s: >22} {s}\n", .{ "", next.desc });
+    try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, coff_header.flags), "flags" });
+    {
+        const fields = std.meta.fields(coff.CoffHeaderFlags);
+        inline for (&[_][]const u8{
+            "Relocs stripped",
+            "Executable",
+            "COFF line numbers have been removed",
+            "COFF symbol table entries for local symbols have been removed",
+            "Aggressively trim working set",
+            "Application can handle > 2-GB addresses",
+            "Reserved",
+            "Little endian",
+            "32-bit",
+            "Debugging information removed",
+            "Fully load and copy to swap file from removable media",
+            "Fully load and copy to swap file from network media",
+            "System file",
+            "DLL",
+            "Uniprocessor machine only",
+            "Big endian",
+        }) |desc, i| {
+            const field = fields[i];
+            if (@field(coff_header.flags, field.name) == 0b1) {
+                try writer.print("{s: >22} {s}\n", .{ "", desc });
+            }
         }
     }
     try writer.writeByte('\n');

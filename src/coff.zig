@@ -2,73 +2,93 @@ const std = @import("std");
 
 pub const MachineType = std.coff.MachineType;
 
-/// Image only, Windows CE, and Microsoft Windows NT and later.
-/// This indicates that the file does not contain base relocations
-/// and must therefore be loaded at its preferred base address.
-/// If the base address is not available, the loader reports an error.
-/// The default behavior of the linker is to strip base relocations
-/// from executable (EXE) files.
-pub const IMAGE_FILE_RELOCS_STRIPPED: u16 = 0x1;
+pub const CoffHeaderFlags = packed struct {
+    /// Image only, Windows CE, and Microsoft Windows NT and later.
+    /// This indicates that the file does not contain base relocations
+    /// and must therefore be loaded at its preferred base address.
+    /// If the base address is not available, the loader reports an error.
+    /// The default behavior of the linker is to strip base relocations
+    /// from executable (EXE) files.
+    RELOCS_STRIPPED: u1,
 
-/// Image only. This indicates that the image file is valid and can be run.
-/// If this flag is not set, it indicates a linker error.
-pub const IMAGE_FILE_EXECUTABLE_IMAGE: u16 = 0x2;
+    /// Image only. This indicates that the image file is valid and can be run.
+    /// If this flag is not set, it indicates a linker error.
+    EXECUTABLE_IMAGE: u1,
 
-/// COFF line numbers have been removed. This flag is deprecated and should be zero.
-pub const IMAGE_FILE_LINE_NUMS_STRIPPED: u16 = 0x4;
+    /// COFF line numbers have been removed. This flag is deprecated and should be zero.
+    LINE_NUMS_STRIPPED: u1,
 
-/// COFF symbol table entries for local symbols have been removed.
-/// This flag is deprecated and should be zero.
-pub const IMAGE_FILE_LOCAL_SYMS_STRIPPED: u16 = 0x8;
+    /// COFF symbol table entries for local symbols have been removed.
+    /// This flag is deprecated and should be zero.
+    LOCAL_SYMS_STRIPPED: u1,
 
-/// Obsolete. Aggressively trim working set.
-/// This flag is deprecated for Windows 2000 and later and must be zero.
-pub const IMAGE_FILE_AGGRESSIVE_WS_TRIM: u16 = 0x10;
+    /// Obsolete. Aggressively trim working set.
+    /// This flag is deprecated for Windows 2000 and later and must be zero.
+    AGGRESSIVE_WS_TRIM: u1,
 
-/// Application can handle > 2-GB addresses.
-pub const IMAGE_FILE_LARGE_ADDRESS_AWARE: u16 = 0x20;
+    /// Application can handle > 2-GB addresses.
+    LARGE_ADDRESS_AWARE: u1,
 
-/// This flag is reserved for future use.
-pub const IMAGE_FILE_RESERVED: u16 = 0x40;
+    /// This flag is reserved for future use.
+    RESERVED: u1,
 
-/// Little endian: the least significant bit (LSB) precedes the
-/// most significant bit (MSB) in memory. This flag is deprecated and should be zero.
-pub const IMAGE_FILE_BYTES_REVERSED_LO: u16 = 0x80;
+    /// Little endian: the least significant bit (LSB) precedes the
+    /// most significant bit (MSB) in memory. This flag is deprecated and should be zero.
+    BYTES_REVERSED_LO: u1,
 
-/// Machine is based on a 32-bit-word architecture.
-pub const IMAGE_FILE_32BIT_MACHINE: u16 = 0x100;
+    /// Machine is based on a 32-bit-word architecture.
+    @"32BIT_MACHINE": u1,
 
-/// Debugging information is removed from the image file.
-pub const IMAGE_FILE_DEBUG_STRIPPED: u16 = 0x200;
+    /// Debugging information is removed from the image file.
+    DEBUG_STRIPPED: u1,
 
-/// If the image is on removable media, fully load it and copy it to the swap file.
-pub const IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP: u16 = 0x400;
+    /// If the image is on removable media, fully load it and copy it to the swap file.
+    REMOVABLE_RUN_FROM_SWAP: u1,
 
-/// If the image is on network media, fully load it and copy it to the swap file.
-pub const IMAGE_FILE_NET_RUN_FROM_SWAP: u16 = 0x800;
+    /// If the image is on network media, fully load it and copy it to the swap file.
+    NET_RUN_FROM_SWAP: u1,
 
-/// The image file is a system file, not a user program.
-pub const IMAGE_FILE_SYSTEM: u16 = 0x1000;
+    /// The image file is a system file, not a user program.
+    SYSTEM: u1,
 
-/// The image file is a dynamic-link library (DLL).
-/// Such files are considered executable files for almost all purposes,
-/// although they cannot be directly run.
-pub const IMAGE_FILE_DLL: u16 = 0x2000;
+    /// The image file is a dynamic-link library (DLL).
+    /// Such files are considered executable files for almost all purposes,
+    /// although they cannot be directly run.
+    DLL: u1,
 
-/// The file should be run only on a uniprocessor machine.
-pub const IMAGE_FILE_UP_SYSTEM_ONLY: u16 = 0x4000;
+    /// The file should be run only on a uniprocessor machine.
+    UP_SYSTEM_ONLY: u1,
 
-/// Big endian: the MSB precedes the LSB in memory. This flag is deprecated and should be zero.
-pub const IMAGE_FILE_BYTES_REVERSED_HI: u16 = 0x8000;
+    /// Big endian: the MSB precedes the LSB in memory. This flag is deprecated and should be zero.
+    BYTES_REVERSED_HI: u1,
+};
 
 pub const CoffHeader = extern struct {
-    machine: u16,
+    /// The number that identifies the type of target machine.
+    machine: MachineType,
+
+    /// The number of sections. This indicates the size of the section table, which immediately follows the headers.
     number_of_sections: u16,
+
+    /// The low 32 bits of the number of seconds since 00:00 January 1, 1970 (a C run-time time_t value),
+    /// which indicates when the file was created.
     time_date_stamp: u32,
+
+    /// The file offset of the COFF symbol table, or zero if no COFF symbol table is present.
+    /// This value should be zero for an image because COFF debugging information is deprecated.
     pointer_to_symbol_table: u32,
+
+    /// The number of entries in the symbol table.
+    /// This data can be used to locate the string table, which immediately follows the symbol table.
+    /// This value should be zero for an image because COFF debugging information is deprecated.
     number_of_symbols: u32,
+
+    /// The size of the optional header, which is required for executable files but not for object files.
+    /// This value should be zero for an object file. For a description of the header format, see Optional Header (Image Only).
     size_of_optional_header: u16,
-    characteristics: u16,
+
+    /// The flags that indicate the attributes of the file.
+    flags: CoffHeaderFlags,
 };
 
 pub const IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b;
