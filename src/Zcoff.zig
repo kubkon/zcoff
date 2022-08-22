@@ -359,13 +359,105 @@ fn printDllCharacteristics(bitset: u16, writer: anytype) !void {
 }
 
 pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
-    _ = self;
-    _ = writer;
-    return error.Todo;
+    const symtab = self.getSymtab() orelse {
+        return writer.writeAll("No symbol table found.\n");
+    };
+
+    try writer.writeAll("COFF SYMBOL TABLE\n");
+
+    const strtab = self.getStrtab().?;
+    var slice = symtab.slice(0, null);
+
+    var index: usize = 0;
+    var aux_counter: usize = 0;
+    while (slice.next()) |sym| {
+        if (aux_counter == 0) {
+            try writer.print("{d:0>3} {d:0>8} ", .{ index, sym.value });
+            switch (sym.section_number) {
+                .UNDEFINED,
+                .ABSOLUTE,
+                .DEBUG,
+                => try writer.print("{s: <9} ", .{@tagName(sym.section_number)}),
+                else => try writer.print("SECT{d: <5} ", .{@enumToInt(sym.section_number)}),
+            }
+            const name = sym.getName() orelse blk: {
+                const offset = sym.getNameOffset() orelse return error.MalformedSymbolRecord;
+                break :blk strtab.get(offset);
+            };
+            try writer.print("{s: <6} {s: <8} {s: <20} | {s}\n", .{
+                @tagName(sym.@"type".base_type),
+                @tagName(sym.@"type".complex_type),
+                @tagName(sym.storage_class),
+                name,
+            });
+            aux_counter = sym.number_of_aux_symbols;
+        } else {
+            aux_counter -= 1;
+        }
+
+        index += 1;
+    }
 }
 
 fn getHeader(self: *Zcoff) coff.CoffHeader {
     return @ptrCast(*align(1) coff.CoffHeader, self.data.?[self.coff_header_offset..][0..@sizeOf(coff.CoffHeader)]).*;
+}
+
+const Symtab = struct {
+    buffer: []const u8,
+
+    fn len(self: Symtab) usize {
+        return @divExact(self.buffer.len, coff.Symbol.sizeOf());
+    }
+
+    /// Lives as long as Symtab instance.
+    fn at(self: Symtab, index: usize) coff.Symbol {
+        const offset = index * coff.Symbol.sizeOf();
+        const raw = self.buffer[offset..][0..coff.Symbol.sizeOf()];
+        return rawAsSymbol(raw);
+    }
+
+    fn rawAsSymbol(raw: []const u8) coff.Symbol {
+        return .{
+            .name = raw[0..8].*,
+            .value = mem.readIntLittle(u32, raw[8..12]),
+            .section_number = @intToEnum(coff.SectionNumber, mem.readIntLittle(u16, raw[12..14])),
+            .@"type" = @bitCast(coff.SymType, mem.readIntLittle(u16, raw[14..16])),
+            .storage_class = @intToEnum(coff.StorageClass, raw[16]),
+            .number_of_aux_symbols = raw[17],
+        };
+    }
+
+    const Slice = struct {
+        buffer: []const u8,
+        num: usize,
+        count: usize = 0,
+
+        /// Lives as long as Symtab instance.
+        fn next(self: *Slice) ?coff.Symbol {
+            if (self.count >= self.num) return null;
+            const sym = rawAsSymbol(self.buffer[0..coff.Symbol.sizeOf()]);
+            self.count += 1;
+            self.buffer = self.buffer[coff.Symbol.sizeOf()..];
+            return sym;
+        }
+    };
+
+    fn slice(self: Symtab, start: usize, end: ?usize) Slice {
+        const offset = start * coff.Symbol.sizeOf();
+        const llen = if (end) |e| e * coff.Symbol.sizeOf() else self.buffer.len;
+        const num = @divExact(llen - offset, coff.Symbol.sizeOf());
+        return Slice{ .buffer = self.buffer[offset..][0..llen], .num = num };
+    }
+};
+
+fn getSymtab(self: *Zcoff) ?Symtab {
+    const coff_header = self.getHeader();
+    if (coff_header.pointer_to_symbol_table == 0) return null;
+
+    const offset = coff_header.pointer_to_symbol_table;
+    const size = coff_header.number_of_symbols * coff.Symbol.sizeOf();
+    return .{ .buffer = self.data.?[offset..][0..size] };
 }
 
 const Strtab = struct {
