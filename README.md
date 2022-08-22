@@ -51,9 +51,9 @@ SECTION HEADER #0
                    1 number of relocations
                    0 number of line numbers
             60500020 flags
-                       Code
-                       Execute
-                       Read
+                       CNT_CODE
+                       MEM_EXECUTE
+                       MEM_READ
                        16 byte align
 
 SECTION HEADER #1
@@ -67,9 +67,9 @@ SECTION HEADER #1
                    0 number of relocations
                    0 number of line numbers
             c0300040 flags
-                       Initialized data
-                       Read
-                       Write
+                       CNT_INITIALIZED_DATA
+                       MEM_READ
+                       MEM_WRITE
                        4 byte align
 
 ...
@@ -146,11 +146,11 @@ OPTIONAL HEADER VALUES
                  400 size of headers
                    0 checksum
                    3 subsystem # (WINDOWS_CUI)
-                8160 DLL characteristics
-                       High Entropy Virtual Address
-                       Dynamic base
-                       NX compatible
-                       Terminal Server Aware
+                8160 DLL flags
+                       HIGH_ENTROPY_VA
+                       DYNAMIC_BASE
+                       NX_COMPAT
+                       TERMINAL_SERVER_AWARE
              1000000 size of stack reserve
                 1000 size of stack commit
               100000 size of heap reserve
@@ -185,9 +185,9 @@ SECTION HEADER #0
                    0 number of relocations
                    0 number of line numbers
             60000020 flags
-                       Code
-                       Execute
-                       Read
+                       CNT_CODE
+                       MEM_EXECUTE
+                       MEM_READ
 
 SECTION HEADER #1
               .rdata name
@@ -200,8 +200,8 @@ SECTION HEADER #1
                    0 number of relocations
                    0 number of line numbers
             40000040 flags
-                       Initialized data
-                       Read
+                       CNT_INITIALIZED_DATA
+                       MEM_READ
 
 ...
 

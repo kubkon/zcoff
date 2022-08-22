@@ -94,38 +94,42 @@ pub const CoffHeader = extern struct {
 pub const IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b;
 pub const IMAGE_NT_OPTIONAL_HDR64_MAGIC = 0x20b;
 
-/// Image can handle a high entropy 64-bit virtual address space.
-pub const IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA: u16 = 0x20;
+pub const DllFlags = packed struct {
+    _reserved_0: u5,
 
-/// DLL can be relocated at load time.
-pub const IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE: u16 = 0x40;
+    /// Image can handle a high entropy 64-bit virtual address space.
+    HIGH_ENTROPY_VA: u1,
 
-/// Code Integrity checks are enforced.
-pub const IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY: u16 = 0x80;
+    /// DLL can be relocated at load time.
+    DYNAMIC_BASE: u1,
 
-/// Image is NX compatible.
-pub const IMAGE_DLLCHARACTERISTICS_NX_COMPAT: u16 = 0x100;
+    /// Code Integrity checks are enforced.
+    FORCE_INTEGRITY: u1,
 
-/// Isolation aware, but do not isolate the image.
-pub const IMAGE_DLLCHARACTERISTICS_NO_ISOLATION: u16 = 0x200;
+    /// Image is NX compatible.
+    NX_COMPAT: u1,
 
-/// Does not use structured exception (SE) handling. No SE handler may be called in this image.
-pub const IMAGE_DLLCHARACTERISTICS_NO_SEH: u16 = 0x400;
+    /// Isolation aware, but do not isolate the image.
+    NO_ISOLATION: u1,
 
-/// Do not bind the image.
-pub const IMAGE_DLLCHARACTERISTICS_NO_BIND: u16 = 0x800;
+    /// Does not use structured exception (SE) handling. No SE handler may be called in this image.
+    NO_SEH: u1,
 
-/// Image must execute in an AppContainer.
-pub const IMAGE_DLLCHARACTERISTICS_APPCONTAINER: u16 = 0x1000;
+    /// Do not bind the image.
+    NO_BIND: u1,
 
-/// A WDM driver.
-pub const IMAGE_DLLCHARACTERISTICS_WDM_DRIVER: u16 = 0x2000;
+    /// Image must execute in an AppContainer.
+    APPCONTAINER: u1,
 
-/// Image supports Control Flow Guard.
-pub const IMAGE_DLLCHARACTERISTICS_GUARD_CF: u16 = 0x4000;
+    /// A WDM driver.
+    WDM_DRIVER: u1,
 
-/// Terminal Server aware.
-pub const IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE: u16 = 0x8000;
+    /// Image supports Control Flow Guard.
+    GUARD_CF: u1,
+
+    /// Terminal Server aware.
+    TERMINAL_SERVER_AWARE: u1,
+};
 
 pub const Subsystem = enum(u16) {
     /// An unknown subsystem
@@ -194,8 +198,8 @@ pub const OptionalHeaderPE32 = extern struct {
     size_of_image: u32,
     size_of_headers: u32,
     checksum: u32,
-    subsystem: u16,
-    dll_characteristics: u16,
+    subsystem: Subsystem,
+    dll_flags: DllFlags,
     size_of_stack_reserve: u32,
     size_of_stack_commit: u32,
     size_of_heap_reserve: u32,
@@ -226,8 +230,8 @@ pub const OptionalHeaderPE64 = extern struct {
     size_of_image: u32,
     size_of_headers: u32,
     checksum: u32,
-    subsystem: u16,
-    dll_characteristics: u16,
+    subsystem: Subsystem,
+    dll_flags: DllFlags,
     size_of_stack_reserve: u64,
     size_of_stack_commit: u64,
     size_of_heap_reserve: u64,

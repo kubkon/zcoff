@@ -150,7 +150,7 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     "size of headers",
                     "checksum",
                     "subsystem",
-                    "DLL characteristics",
+                    "DLL flags",
                     "size of stack reserve",
                     "size of stack commit",
                     "size of heap reserve",
@@ -159,17 +159,22 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     "number of RVA and sizes",
                 }) |desc, i| {
                     const field = fields[i];
-                    try writer.print("{x: >20} {s}", .{ @field(pe_header, field.name), desc });
-                    if (mem.eql(u8, field.name, "magic")) {
-                        try writer.writeAll(" # (PE32)");
+                    if (comptime mem.eql(u8, field.name, "dll_flags")) {
+                        try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, pe_header.dll_flags), desc });
+                        try printDllFlags(pe_header.dll_flags, writer);
+                    } else if (comptime mem.eql(u8, field.name, "subsystem")) {
+                        try writer.print("{x: >20} {s} # ({s})\n", .{
+                            @enumToInt(pe_header.subsystem),
+                            desc,
+                            @tagName(pe_header.subsystem),
+                        });
+                    } else {
+                        try writer.print("{x: >20} {s}", .{ @field(pe_header, field.name), desc });
+                        if (comptime mem.eql(u8, field.name, "magic")) {
+                            try writer.writeAll(" # (PE32+)");
+                        }
                         try writer.writeByte('\n');
-                    } else if (mem.eql(u8, field.name, "dll_characteristics")) {
-                        try writer.writeByte('\n');
-                        try printDllCharacteristics(pe_header.dll_characteristics, writer);
-                    } else if (mem.eql(u8, field.name, "subsystem")) {
-                        try writer.print(" # ({s})", .{@tagName(@intToEnum(coff.Subsystem, pe_header.subsystem))});
-                        try writer.writeByte('\n');
-                    } else try writer.writeByte('\n');
+                    }
                 }
                 number_of_directories = pe_header.number_of_rva_and_sizes;
             },
@@ -199,7 +204,7 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     "size of headers",
                     "checksum",
                     "subsystem",
-                    "DLL characteristics",
+                    "DLL flags",
                     "size of stack reserve",
                     "size of stack commit",
                     "size of heap reserve",
@@ -208,17 +213,22 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     "number of directories",
                 }) |desc, i| {
                     const field = fields[i];
-                    try writer.print("{x: >20} {s}", .{ @field(pe_header, field.name), desc });
-                    if (mem.eql(u8, field.name, "magic")) {
-                        try writer.writeAll(" # (PE32+)");
+                    if (comptime mem.eql(u8, field.name, "dll_flags")) {
+                        try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, pe_header.dll_flags), desc });
+                        try printDllFlags(pe_header.dll_flags, writer);
+                    } else if (comptime mem.eql(u8, field.name, "subsystem")) {
+                        try writer.print("{x: >20} {s} # ({s})\n", .{
+                            @enumToInt(pe_header.subsystem),
+                            desc,
+                            @tagName(pe_header.subsystem),
+                        });
+                    } else {
+                        try writer.print("{x: >20} {s}", .{ @field(pe_header, field.name), desc });
+                        if (comptime mem.eql(u8, field.name, "magic")) {
+                            try writer.writeAll(" # (PE32+)");
+                        }
                         try writer.writeByte('\n');
-                    } else if (mem.eql(u8, field.name, "dll_characteristics")) {
-                        try writer.writeByte('\n');
-                        try printDllCharacteristics(pe_header.dll_characteristics, writer);
-                    } else if (mem.eql(u8, field.name, "subsystem")) {
-                        try writer.print(" # ({s})", .{@tagName(@intToEnum(coff.Subsystem, pe_header.subsystem))});
-                        try writer.writeByte('\n');
-                    } else try writer.writeByte('\n');
+                    }
                 }
                 number_of_directories = pe_header.number_of_rva_and_sizes;
             },
@@ -285,16 +295,10 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
             }) |desc, field_i| {
                 const field = fields[field_i + 1];
                 try writer.print("{x: >20} {s}\n", .{ @field(sect_hdr, field.name), desc });
-                // if (mem.eql(u8, field.name, "flags")) {
-                //     try printSectionFlags(sect_hdr.flags, writer);
-                //     if (sect_hdr.getAlignment()) |alignment| {
-                //     }
-                // }
             }
 
             try writer.print("{x: >20} flags\n", .{@bitCast(u32, sect_hdr.flags)});
-            const flag_fields = std.meta.fields(coff.SectionHeaderFlags);
-            inline for (flag_fields) |flag_field| {
+            inline for (std.meta.fields(coff.SectionHeaderFlags)) |flag_field| {
                 if (flag_field.field_type == u1) {
                     if (@field(sect_hdr.flags, flag_field.name) == 0b1) {
                         try writer.print("{s: >22} {s}\n", .{ "", flag_field.name });
@@ -309,47 +313,12 @@ pub fn printHeaders(self: *Zcoff, writer: anytype) !void {
     }
 }
 
-fn printSectionFlags(bitset: u32, writer: anytype) !void {
-    inline for (&[_]struct { flag: u32, desc: []const u8 }{
-        .{ .flag = coff.IMAGE_SCN_TYPE_NO_PAD, .desc = "No padding" },
-        .{ .flag = coff.IMAGE_SCN_CNT_CODE, .desc = "Code" },
-        .{ .flag = coff.IMAGE_SCN_CNT_INITIALIZED_DATA, .desc = "Initialized data" },
-        .{ .flag = coff.IMAGE_SCN_CNT_UNINITIALIZED_DATA, .desc = "Uninitialized data" },
-        .{ .flag = coff.IMAGE_SCN_LNK_INFO, .desc = "Comments" },
-        .{ .flag = coff.IMAGE_SCN_LNK_REMOVE, .desc = "Discard" },
-        .{ .flag = coff.IMAGE_SCN_LNK_COMDAT, .desc = "COMDAT" },
-        .{ .flag = coff.IMAGE_SCN_GPREL, .desc = "GP referenced" },
-        .{ .flag = coff.IMAGE_SCN_LNK_NRELOC_OVFL, .desc = "Extended relocations" },
-        .{ .flag = coff.IMAGE_SCN_MEM_DISCARDABLE, .desc = "Discardable" },
-        .{ .flag = coff.IMAGE_SCN_MEM_NOT_CACHED, .desc = "Not cached" },
-        .{ .flag = coff.IMAGE_SCN_MEM_NOT_PAGED, .desc = "Not paged" },
-        .{ .flag = coff.IMAGE_SCN_MEM_SHARED, .desc = "Shared" },
-        .{ .flag = coff.IMAGE_SCN_MEM_EXECUTE, .desc = "Execute" },
-        .{ .flag = coff.IMAGE_SCN_MEM_READ, .desc = "Read" },
-        .{ .flag = coff.IMAGE_SCN_MEM_WRITE, .desc = "Write" },
-    }) |next| {
-        if (bitset & next.flag != 0) {
-            try writer.print("{s: >22} {s}\n", .{ "", next.desc });
-        }
-    }
-}
-
-fn printDllCharacteristics(bitset: u16, writer: anytype) !void {
-    inline for (&[_]struct { flag: u16, desc: []const u8 }{
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA, .desc = "High Entropy Virtual Address" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE, .desc = "Dynamic base" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY, .desc = "Force integrity" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NX_COMPAT, .desc = "NX compatible" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NO_ISOLATION, .desc = "No isolation" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NO_SEH, .desc = "No structured exception handling" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_NO_BIND, .desc = "No bind" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_APPCONTAINER, .desc = "AppContainer" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_WDM_DRIVER, .desc = "WDM Driver" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_GUARD_CF, .desc = "Control Flow Guard" },
-        .{ .flag = coff.IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE, .desc = "Terminal Server Aware" },
-    }) |next| {
-        if (bitset & next.flag != 0) {
-            try writer.print("{s: >22} {s}\n", .{ "", next.desc });
+fn printDllFlags(flags: coff.DllFlags, writer: anytype) !void {
+    inline for (std.meta.fields(coff.DllFlags)) |field| {
+        if (field.field_type == u1) {
+            if (@field(flags, field.name) == 0b1) {
+                try writer.print("{s: >22} {s}\n", .{ "", field.name });
+            }
         }
     }
 }
