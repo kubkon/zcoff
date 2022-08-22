@@ -252,6 +252,10 @@ pub const SectionHeader = extern struct {
         if (align_flag == 0) return null;
         return std.math.powi(u16, 2, align_flag - 1) catch unreachable;
     }
+
+    pub fn isComdat(self: SectionHeader) bool {
+        return self.flags & IMAGE_SCN_LNK_COMDAT != 0;
+    }
 };
 
 /// The section should not be padded to the next boundary.
@@ -620,7 +624,7 @@ pub const SectionDefinition = struct {
     number: u16,
 
     /// The COMDAT selection number. This is applicable if the section is a COMDAT section.
-    selection: u8,
+    selection: ComdatSelection,
 
     unused: [3]u8,
 };
@@ -654,4 +658,36 @@ pub const WeakExternalFlag = enum(u32) {
     SEARCH_LIBRARY = 2,
     SEARCH_ALIAS = 3,
     ANTI_DEPENDENCY = 4,
+};
+
+pub const ComdatSelection = enum(u8) {
+    /// Not a COMDAT section.
+    NONE = 0,
+
+    /// If this symbol is already defined, the linker issues a "multiply defined symbol" error.
+    NODUPLICATES = 1,
+
+    /// Any section that defines the same COMDAT symbol can be linked; the rest are removed.
+    ANY = 2,
+
+    /// The linker chooses an arbitrary section among the definitions for this symbol.
+    /// If all definitions are not the same size, a "multiply defined symbol" error is issued.
+    SAME_SIZE = 3,
+
+    /// The linker chooses an arbitrary section among the definitions for this symbol.
+    /// If all definitions do not match exactly, a "multiply defined symbol" error is issued.
+    EXACT_MATCH = 4,
+
+    /// The section is linked if a certain other COMDAT section is linked.
+    /// This other section is indicated by the Number field of the auxiliary symbol record for the section definition.
+    /// This setting is useful for definitions that have components in multiple sections
+    /// (for example, code in one and data in another), but where all must be linked or discarded as a set.
+    /// The other section this section is associated with must be a COMDAT section, which can be another
+    /// associative COMDAT section. An associative COMDAT section's section association chain can't form a loop.
+    /// The section association chain must eventually come to a COMDAT section that doesn't have IMAGE_COMDAT_SELECT_ASSOCIATIVE set.
+    ASSOCIATIVE = 5,
+
+    /// The linker chooses the largest definition from among all of the definitions for this symbol.
+    /// If multiple definitions have this size, the choice between them is arbitrary.
+    LARGEST = 6,
 };

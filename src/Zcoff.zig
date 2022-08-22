@@ -421,13 +421,20 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
                     try writer.print("     {s}\n", .{file_def.getFileName()});
                 },
                 .sect_def => |sect_def| {
-                    // TODO COMDAT section
-                    try writer.print("     Section length {x: >4}, #relocs {x: >4}, #linenums {x: >4}, checksum {x: >8}\n", .{
+                    try writer.print("     Section length {x: >4}, #relocs {x: >4}, #linenums {x: >4}, checksum {x: >8}", .{
                         sect_def.length,
                         sect_def.number_of_relocations,
                         sect_def.number_of_linenumbers,
                         sect_def.checksum,
                     });
+                    const st_sym = symtab.at(index - aux_counter, .symbol).symbol;
+                    const sect = sections[@enumToInt(st_sym.section_number) - 1];
+                    if (sect.isComdat()) {
+                        try writer.print(", selection {d} ({s})", .{ @enumToInt(sect_def.selection), @tagName(sect_def.selection) });
+                    } else {
+                        assert(sect_def.selection == .NONE); // Expected non COMDAT section would not set the selection field in aux record.
+                    }
+                    try writer.writeByte('\n');
                 },
                 else => {},
             };
@@ -524,7 +531,7 @@ const Symtab = struct {
             .number_of_linenumbers = mem.readIntLittle(u16, raw[6..8]),
             .checksum = mem.readIntLittle(u32, raw[8..12]),
             .number = mem.readIntLittle(u16, raw[12..14]),
-            .selection = raw[14],
+            .selection = @intToEnum(coff.ComdatSelection, raw[14]),
             .unused = raw[15..18].*,
         };
     }
