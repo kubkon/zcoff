@@ -8,7 +8,7 @@ Available options:
 
 ```
 > zcoff --help
-zcoff [--help] [--headers] [--symbols] <FILE>
+zcoff [--help] [--headers] [--symbols] [--out <OUT>] <FILE>
         --help
             Display this help and exit.
 
@@ -17,6 +17,9 @@ zcoff [--help] [--headers] [--symbols] <FILE>
 
         --symbols
             Print symbol table.
+
+        --out <OUT>
+            Save to file.
 ```
 
 ### Examining COFF object files
