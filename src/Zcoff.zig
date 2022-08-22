@@ -395,6 +395,9 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
                         }
                     },
                     else => {
+                        if (sym.storage_class == .FUNCTION) {
+                            break :aux_tag .debug_info;
+                        }
                         if (sym.storage_class == .EXTERNAL and sym.@"type".complex_type == .FUNCTION) {
                             break :aux_tag .func_def;
                         }
@@ -436,7 +439,9 @@ pub fn printSymbols(self: *Zcoff, writer: anytype) !void {
                     }
                     try writer.writeByte('\n');
                 },
-                else => {},
+                else => |other| {
+                    std.log.warn("Unhandled auxiliary symbol: {}", .{other});
+                },
             };
 
             aux_counter -= 1;
@@ -462,7 +467,7 @@ const Symtab = struct {
     const Tag = enum {
         symbol,
         func_def,
-        // func_def_di,
+        debug_info,
         weak_ext,
         file_def,
         sect_def,
@@ -470,6 +475,7 @@ const Symtab = struct {
 
     const Record = union(Tag) {
         symbol: coff.Symbol,
+        debug_info: coff.DebugInfoDefinition,
         func_def: coff.FunctionDefinition,
         weak_ext: coff.WeakExternalDefinition,
         file_def: coff.FileDefinition,
@@ -482,6 +488,7 @@ const Symtab = struct {
         const raw = self.buffer[offset..][0..coff.Symbol.sizeOf()];
         return switch (tag) {
             .symbol => .{ .symbol = asSymbol(raw) },
+            .debug_info => .{ .debug_info = asDebugInfo(raw) },
             .func_def => .{ .func_def = asFuncDef(raw) },
             .weak_ext => .{ .weak_ext = asWeakExtDef(raw) },
             .file_def => .{ .file_def = asFileDef(raw) },
@@ -497,6 +504,16 @@ const Symtab = struct {
             .@"type" = @bitCast(coff.SymType, mem.readIntLittle(u16, raw[14..16])),
             .storage_class = @intToEnum(coff.StorageClass, raw[16]),
             .number_of_aux_symbols = raw[17],
+        };
+    }
+
+    fn asDebugInfo(raw: []const u8) coff.DebugInfoDefinition {
+        return .{
+            .unused_1 = raw[0..4].*,
+            .linenumber = mem.readIntLittle(u16, raw[4..6]),
+            .unused_2 = raw[6..12].*,
+            .pointer_to_next_function = mem.readIntLittle(u32, raw[12..16]),
+            .unused_3 = raw[16..18].*,
         };
     }
 

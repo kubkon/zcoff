@@ -691,3 +691,19 @@ pub const ComdatSelection = enum(u8) {
     /// If multiple definitions have this size, the choice between them is arbitrary.
     LARGEST = 6,
 };
+
+pub const DebugInfoDefinition = struct {
+    unused_1: [4]u8,
+
+    /// The actual ordinal line number (1, 2, 3, and so on) within the source file, corresponding to the .bf or .ef record.
+    linenumber: u16,
+
+    unused_2: [6]u8,
+
+    /// The symbol-table index of the next .bf symbol record.
+    /// If the function is the last in the symbol table, this field is set to zero.
+    /// It is not used for .ef records.
+    pointer_to_next_function: u32,
+
+    unused_3: [2]u8,
+};
