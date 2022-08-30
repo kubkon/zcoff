@@ -13,6 +13,7 @@ pub fn main() !void {
         clap.parseParam("--help          Display this help and exit.") catch unreachable,
         clap.parseParam("--headers       Print headers.") catch unreachable,
         clap.parseParam("--symbols       Print symbol table.") catch unreachable,
+        clap.parseParam("--relocations   Print relocations.") catch unreachable,
         clap.parseParam("--out <OUT>     Save to file.") catch unreachable,
         clap.parseParam("<FILE>") catch unreachable,
     };
@@ -39,10 +40,8 @@ pub fn main() !void {
     const file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
 
-    var zcoff = Zcoff.init(gpa.allocator());
+    var zcoff = try Zcoff.parse(gpa.allocator(), file);
     defer zcoff.deinit();
-
-    try zcoff.parse(file);
 
     const out_file: ?std.fs.File = if (res.args.out) |out| try std.fs.cwd().createFile(out, .{
         .truncate = true,
@@ -50,18 +49,11 @@ pub fn main() !void {
     defer if (out_file) |ff| ff.close();
     const writer = if (out_file) |ff| ff.writer() else std.io.getStdOut().writer();
 
-    var selected = false;
-    if (res.args.headers) {
-        try zcoff.printHeaders(writer);
-        selected = true;
-    }
-    if (res.args.symbols) {
-        try zcoff.printSymbols(writer);
-        selected = true;
-    }
-    if (!selected) {
-        return printUsageWithHelp(stderr, params[0..]);
-    }
+    return zcoff.print(writer, .{
+        .headers = res.args.headers,
+        .symbols = res.args.symbols,
+        .relocations = res.args.relocations,
+    });
 }
 
 fn printUsageWithHelp(stream: anytype, comptime params: []const clap.Param(clap.Help)) !void {
