@@ -79,7 +79,8 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
         if (options.headers) try self.printSectionHeader(writer, @intCast(u16, sect_id), sect_hdr);
 
         if (base_relocs_dir) |dir| {
-            if (self.getSectionByAddress(dir.virtual_address).? == sect_id) {
+            if (self.getSectionByAddress(dir.virtual_address)) |search| blk: {
+                if (search != sect_id) break :blk;
                 try writer.print("BASE RELOCATIONS #{d}\n", .{sect_id + 1});
                 const offset = dir.virtual_address - sect_hdr.virtual_address + sect_hdr.pointer_to_raw_data;
                 const base_relocs = self.data[offset..][0..dir.size];
@@ -112,7 +113,8 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
         }
 
         if (imports_dir) |dir| {
-            if (self.getSectionByAddress(dir.virtual_address).? == sect_id) {
+            if (self.getSectionByAddress(dir.virtual_address)) |search| blk: {
+                if (search != sect_id) break :blk;
                 try writer.writeAll("Section contains the following imports:\n\n");
                 const offset = dir.virtual_address - sect_hdr.virtual_address + sect_hdr.pointer_to_raw_data;
                 const raw_imports = self.data[offset..][0..dir.size];
