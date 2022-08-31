@@ -13,6 +13,7 @@ pub fn main() !void {
         clap.parseParam("--help          Display this help and exit.") catch unreachable,
         clap.parseParam("--headers       Print headers.") catch unreachable,
         clap.parseParam("--symbols       Print symbol table.") catch unreachable,
+        clap.parseParam("--imports       Print import table.") catch unreachable,
         clap.parseParam("--relocations   Print relocations.") catch unreachable,
         clap.parseParam("--out <OUT>     Save to file.") catch unreachable,
         clap.parseParam("<FILE>") catch unreachable,
@@ -53,6 +54,7 @@ pub fn main() !void {
         .headers = res.args.headers,
         .symbols = res.args.symbols,
         .relocations = res.args.relocations,
+        .imports = res.args.imports,
     });
 }
 

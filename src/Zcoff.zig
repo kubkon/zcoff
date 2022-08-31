@@ -17,6 +17,7 @@ const Options = struct {
     headers: bool,
     symbols: bool,
     relocations: bool,
+    imports: bool,
 };
 
 pub fn deinit(self: *Zcoff) void {
@@ -68,6 +69,10 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
         data_dirs[@enumToInt(coff.DirectoryEntry.BASERELOC)]
     else
         null;
+    const imports_dir: ?coff.ImageDataDirectory = if (options.imports and @enumToInt(coff.DirectoryEntry.IMPORT) < data_dirs.len)
+        data_dirs[@enumToInt(coff.DirectoryEntry.IMPORT)]
+    else
+        null;
 
     const sections = self.getSectionHeaders();
     for (sections) |*sect_hdr, sect_id| {
@@ -92,16 +97,69 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
                         switch (brel.@"type") {
                             .ABSOLUTE => {},
                             .DIR64 => {
-                                const rebase_addr = block.page_rva + brel.offset;
-                                const rebase_sect_id = self.getSectionByAddress(rebase_addr).?;
-                                const rebase_sect = &sections[rebase_sect_id];
-                                const rebase_offset = rebase_addr - rebase_sect.virtual_address + rebase_sect.pointer_to_raw_data;
+                                const rebase_offset = self.getFileOffsetForAddress(block.page_rva + brel.offset);
                                 const pointer = mem.readIntLittle(u64, self.data[rebase_offset..][0..8]);
                                 try writer.print(" {x:0>16}", .{pointer});
                             },
                             else => {}, // TODO
                         }
                         try writer.writeByte('\n');
+                    }
+                }
+
+                try writer.writeByte('\n');
+            }
+        }
+
+        if (imports_dir) |dir| {
+            if (self.getSectionByAddress(dir.virtual_address).? == sect_id) {
+                try writer.writeAll("Section contains the following imports:\n\n");
+                const offset = dir.virtual_address - sect_hdr.virtual_address + sect_hdr.pointer_to_raw_data;
+                const raw_imports = self.data[offset..][0..dir.size];
+                const num_imports = @divExact(dir.size, @sizeOf(coff.ImportDirectoryEntry)) - 1; // We exclude the NULL entry
+                const imports = @ptrCast([*]align(1) const coff.ImportDirectoryEntry, raw_imports)[0..num_imports];
+
+                const hdr = self.getOptionalHeader();
+                const is_32bit = hdr.magic == coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC;
+                const image_base = self.getImageBase();
+
+                for (imports) |import| {
+                    const name_offset = self.getFileOffsetForAddress(import.name_rva);
+                    const name = mem.sliceTo(@ptrCast([*:0]const u8, self.data.ptr + name_offset), 0);
+
+                    try writer.print("  {s}\n", .{name});
+                    try writer.print("{x: >20} Import Address Table\n", .{import.import_address_table_rva + image_base});
+                    try writer.print("{x: >20} Import Name Table\n", .{import.import_lookup_table_rva + image_base});
+                    try writer.print("{x: >20} time date stamp\n", .{import.time_date_stamp});
+                    try writer.print("{x: >20} Index of first forwarder reference\n", .{import.forwarder_chain});
+
+                    const lookup_table_offset = self.getFileOffsetForAddress(import.import_lookup_table_rva);
+                    if (is_32bit) {
+                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]align(1) u32, self.data.ptr + lookup_table_offset), 0);
+                        for (raw_lookups) |rl| {
+                            if (coff.ImportLookupEntry32.getImportByOrdinal(rl)) |_| {
+                                // TODO
+                            } else if (coff.ImportLookupEntry32.getImportByName(rl)) |by_name| {
+                                const by_name_offset = self.getFileOffsetForAddress(by_name.name_table_rva);
+                                const by_name_entry = @ptrCast(*align(1) const coff.ImportHintNameEntry, self.data.ptr + by_name_offset);
+                                const symbol_hint = by_name_entry.hint;
+                                const symbol_name = mem.sliceTo(@ptrCast([*:0]const u8, &by_name_entry.name), 0);
+                                try writer.print("{x: >30} {s}\n", .{ symbol_hint, symbol_name });
+                            } else unreachable;
+                        }
+                    } else {
+                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]align(1) u64, self.data.ptr + lookup_table_offset), 0);
+                        for (raw_lookups) |rl| {
+                            if (coff.ImportLookupEntry64.getImportByOrdinal(rl)) |_| {
+                                // TODO
+                            } else if (coff.ImportLookupEntry64.getImportByName(rl)) |by_name| {
+                                const by_name_offset = self.getFileOffsetForAddress(by_name.name_table_rva);
+                                const by_name_entry = @ptrCast(*align(1) const coff.ImportHintNameEntry, self.data.ptr + by_name_offset);
+                                const symbol_hint = by_name_entry.hint;
+                                const symbol_name = mem.sliceTo(@ptrCast([*:0]const u8, &by_name_entry.name), 0);
+                                try writer.print("{x: >30} {s}\n", .{ symbol_hint, symbol_name });
+                            } else unreachable;
+                        }
                     }
                 }
 
@@ -569,4 +627,11 @@ pub fn getSectionByAddress(self: Zcoff, rva: u32) ?u16 {
         if (rva >= sect_hdr.virtual_address and rva < sect_hdr.virtual_address + sect_hdr.virtual_size)
             return @intCast(u16, sect_id);
     } else return null;
+}
+
+pub fn getFileOffsetForAddress(self: Zcoff, rva: u32) u32 {
+    const sections = self.getSectionHeaders();
+    const sect_id = self.getSectionByAddress(rva).?;
+    const sect = &sections[sect_id];
+    return rva - sect.virtual_address + sect.pointer_to_raw_data;
 }
