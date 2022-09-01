@@ -8,7 +8,7 @@ Available options:
 
 ```
 > zcoff --help
-zcoff [--help] [--headers] [--symbols] [--out <OUT>] <FILE>
+zcoff [--help] [--headers] [--symbols] [--imports] [--relocations] [--out <OUT>] <FILE>
         --help
             Display this help and exit.
 
@@ -17,6 +17,12 @@ zcoff [--help] [--headers] [--symbols] [--out <OUT>] <FILE>
 
         --symbols
             Print symbol table.
+
+        --imports
+            Print import table.
+
+        --relocations
+            Print relocations.
 
         --out <OUT>
             Save to file.
