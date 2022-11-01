@@ -137,7 +137,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
                     const lookup_table_offset = self.getFileOffsetForAddress(import.import_lookup_table_rva);
                     if (is_32bit) {
-                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]const align(1) u32, self.data.ptr + lookup_table_offset), 0);
+                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]align(1) const u32, self.data.ptr + lookup_table_offset), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry32.getImportByOrdinal(rl)) |_| {
                                 // TODO
@@ -150,7 +150,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
                             } else unreachable;
                         }
                     } else {
-                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]const align(1) u64, self.data.ptr + lookup_table_offset), 0);
+                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]align(1) const u64, self.data.ptr + lookup_table_offset), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry64.getImportByOrdinal(rl)) |_| {
                                 // TODO
