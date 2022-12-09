@@ -43,7 +43,7 @@ pub fn parse(gpa: Allocator, file: fs.File) !Zcoff {
         try stream.seekTo(coff_header_offset);
         var buf: [4]u8 = undefined;
         try reader.readNoEof(&buf);
-        self.is_image = mem.eql(u8, pe_magic, &buf);
+        if (!mem.eql(u8, pe_magic, &buf)) return error.InvalidPEHeaderMagic;
 
         // Do some basic validation upfront
         self.coff_header_offset = coff_header_offset + 4;
