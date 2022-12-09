@@ -29,20 +29,23 @@ pub fn parse(gpa: Allocator, file: fs.File) !Zcoff {
     const data = try file.readToEndAlloc(gpa, stat.size);
     var self = Zcoff{ .gpa = gpa, .data = data };
 
+    const msdos_magic = "MZ";
     const pe_pointer_offset = 0x3C;
     const pe_magic = "PE\x00\x00";
 
-    var stream = std.io.fixedBufferStream(self.data);
-    const reader = stream.reader();
-    try stream.seekTo(pe_pointer_offset);
-    const coff_header_offset = try reader.readIntLittle(u32);
-    try stream.seekTo(coff_header_offset);
-    var buf: [4]u8 = undefined;
-    try reader.readNoEof(&buf);
-    self.is_image = mem.eql(u8, pe_magic, &buf);
+    self.is_image = mem.eql(u8, msdos_magic, self.data[0..2]);
 
-    // Do some basic validation upfront
     if (self.is_image) {
+        var stream = std.io.fixedBufferStream(self.data);
+        const reader = stream.reader();
+        try stream.seekTo(pe_pointer_offset);
+        const coff_header_offset = try reader.readIntLittle(u32);
+        try stream.seekTo(coff_header_offset);
+        var buf: [4]u8 = undefined;
+        try reader.readNoEof(&buf);
+        self.is_image = mem.eql(u8, pe_magic, &buf);
+
+        // Do some basic validation upfront
         self.coff_header_offset = coff_header_offset + 4;
         const coff_header = self.getCoffHeader();
         if (coff_header.size_of_optional_header == 0) return error.MissingPEHeader;
@@ -64,15 +67,20 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
     try writer.writeByte('\n');
 
-    const data_dirs = self.getDataDirectories();
-    const base_relocs_dir: ?coff.ImageDataDirectory = if (options.relocations and @enumToInt(coff.DirectoryEntry.BASERELOC) < data_dirs.len)
-        data_dirs[@enumToInt(coff.DirectoryEntry.BASERELOC)]
-    else
-        null;
-    const imports_dir: ?coff.ImageDataDirectory = if (options.imports and @enumToInt(coff.DirectoryEntry.IMPORT) < data_dirs.len)
-        data_dirs[@enumToInt(coff.DirectoryEntry.IMPORT)]
-    else
-        null;
+    var base_relocs_dir: ?coff.ImageDataDirectory = null;
+    var imports_dir: ?coff.ImageDataDirectory = null;
+
+    if (self.is_image) {
+        const data_dirs = self.getDataDirectories();
+        base_relocs_dir = if (options.relocations and @enumToInt(coff.DirectoryEntry.BASERELOC) < data_dirs.len)
+            data_dirs[@enumToInt(coff.DirectoryEntry.BASERELOC)]
+        else
+            null;
+        imports_dir = if (options.imports and @enumToInt(coff.DirectoryEntry.IMPORT) < data_dirs.len)
+            data_dirs[@enumToInt(coff.DirectoryEntry.IMPORT)]
+        else
+            null;
+    }
 
     const sections = self.getSectionHeaders();
     for (sections) |*sect_hdr, sect_id| {
