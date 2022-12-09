@@ -102,8 +102,8 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
                     try writer.print("{x: >8} RVA, {x: >8} SizeOfBlock\n", .{ block.page_rva, block.block_size });
                     for (block_relocs) |brel| {
-                        try writer.print("{x: >8}  {s: <20}", .{ brel.offset, @tagName(brel.@"type") });
-                        switch (brel.@"type") {
+                        try writer.print("{x: >8}  {s: <20}", .{ brel.offset, @tagName(brel.type) });
+                        switch (brel.type) {
                             .ABSOLUTE => {},
                             .DIR64 => {
                                 const rebase_offset = self.getFileOffsetForAddress(block.page_rva + brel.offset);
@@ -453,8 +453,8 @@ fn printSymbols(self: *Zcoff, writer: anytype) !void {
                 break :blk strtab.get(offset);
             };
             try writer.print("{s: <6} {s: <8} {s: <20} | {s}\n", .{
-                @tagName(sym.@"type".base_type),
-                @tagName(sym.@"type".complex_type),
+                @tagName(sym.type.base_type),
+                @tagName(sym.type.complex_type),
                 @tagName(sym.storage_class),
                 name,
             });
@@ -476,7 +476,7 @@ fn printSymbols(self: *Zcoff, writer: anytype) !void {
                         if (sym.storage_class == .FUNCTION) {
                             break :aux_tag .debug_info;
                         }
-                        if (sym.storage_class == .EXTERNAL and sym.@"type".complex_type == .FUNCTION) {
+                        if (sym.storage_class == .EXTERNAL and sym.type.complex_type == .FUNCTION) {
                             break :aux_tag .func_def;
                         }
                         if (sym.storage_class == .STATIC) {
