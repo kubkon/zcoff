@@ -1,13 +1,16 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build.Builder) void {
     const target = b.standardTargetOptions(.{});
-    const mode = b.standardReleaseOptions();
+    const mode = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable("zcoff", "src/main.zig");
-    exe.addPackagePath("clap", "zig-clap/clap.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
+    const exe = b.addExecutable(.{
+        .name = "zcoff",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = mode,
+    });
+    exe.addAnonymousModule("clap", .{ .source_file = .{ .path = "zig-clap/clap.zig" } });
     exe.install();
 
     const run_cmd = exe.run();
@@ -20,6 +23,6 @@ pub fn build(b: *std.build.Builder) void {
     run_step.dependOn(&run_cmd.step);
 
     const test_step = b.step("test", "Run all tests");
-    const tests = b.addTest("src/Zcoff.zig");
+    const tests = b.addTest(.{ .root_source_file = .{ .path = "src/Zcoff.zig" } });
     test_step.dependOn(&tests.step);
 }

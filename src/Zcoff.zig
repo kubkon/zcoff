@@ -380,7 +380,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
 
 fn printDllFlags(flags: coff.DllFlags, writer: anytype) !void {
     inline for (std.meta.fields(coff.DllFlags)) |field| {
-        if (field.field_type == u1) {
+        if (field.type == u1) {
             if (@field(flags, field.name) == 0b1) {
                 try writer.print("{s: >22} {s}\n", .{ "", field.name });
             }
@@ -412,7 +412,7 @@ fn printSectionHeader(self: *Zcoff, writer: anytype, sect_id: u16, sect_hdr: *al
 
     try writer.print("{x: >20} flags\n", .{@bitCast(u32, sect_hdr.flags)});
     inline for (std.meta.fields(coff.SectionHeaderFlags)) |flag_field| {
-        if (flag_field.field_type == u1) {
+        if (flag_field.type == u1) {
             if (@field(sect_hdr.flags, flag_field.name) == 0b1) {
                 try writer.print("{s: >22} {s}\n", .{ "", flag_field.name });
             }
