@@ -10,7 +10,9 @@ pub fn build(b: *std.Build.Builder) void {
         .target = target,
         .optimize = mode,
     });
-    exe.addAnonymousModule("clap", .{ .source_file = .{ .path = "zig-clap/clap.zig" } });
+    _ = exe.addAnonymousModule("clap", .{
+        .source_file = .{ .path = "zig-clap/clap.zig" },
+    });
     exe.install();
 
     const run_cmd = exe.run();
@@ -22,7 +24,12 @@ pub fn build(b: *std.Build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    const tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/Zcoff.zig" },
+        .target = target,
+        .optimize = mode,
+    });
+    const tests_run = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run all tests");
-    const tests = b.addTest(.{ .root_source_file = .{ .path = "src/Zcoff.zig" } });
-    test_step.dependOn(&tests.step);
+    test_step.dependOn(&tests_run.step);
 }
