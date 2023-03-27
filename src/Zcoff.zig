@@ -83,7 +83,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
     }
 
     const sections = self.getSectionHeaders();
-    for (sections) |*sect_hdr, sect_id| {
+    for (sections, 0..) |*sect_hdr, sect_id| {
         if (options.headers) try self.printSectionHeader(writer, @intCast(u16, sect_id), sect_hdr);
 
         if (base_relocs_dir) |dir| {
@@ -195,7 +195,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
             "file pointer to symbol table",
             "number of symbols",
             "size of optional header",
-        }) |desc, i| {
+        }, 0..) |desc, i| {
             const field = fields[i + 1];
             try writer.print("{x: >20} {s}\n", .{ @field(coff_header, field.name), desc });
         }
@@ -220,7 +220,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
             "DLL",
             "Uniprocessor machine only",
             "Big endian",
-        }) |desc, i| {
+        }, 0..) |desc, i| {
             const field = fields[i];
             if (@field(coff_header.flags, field.name) == 0b1) {
                 try writer.print("{s: >22} {s}\n", .{ "", desc });
@@ -266,7 +266,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     "size of heap commit",
                     "loader flags",
                     "number of RVA and sizes",
-                }) |desc, i| {
+                }, 0..) |desc, i| {
                     const field = fields[i];
                     if (comptime mem.eql(u8, field.name, "dll_flags")) {
                         try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, pe_header.dll_flags), desc });
@@ -319,7 +319,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
                     "size of heap commit",
                     "loader flags",
                     "number of directories",
-                }) |desc, i| {
+                }, 0..) |desc, i| {
                     const field = fields[i];
                     if (comptime mem.eql(u8, field.name, "dll_flags")) {
                         try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, pe_header.dll_flags), desc });
@@ -364,7 +364,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
                 "Delay Import Directory",
                 "COM Descriptor Directory",
                 "Reserved Directory",
-            }) |desc, i| {
+            }, 0..) |desc, i| {
                 if (i < self.getNumberOfDataDirectories()) {
                     const data_dir = data_dirs[i];
                     try writer.print("{x: >20} [{x: >10}] RVA [size] of {s}\n", .{
@@ -405,7 +405,7 @@ fn printSectionHeader(self: *Zcoff, writer: anytype, sect_id: u16, sect_hdr: *al
         "file pointer to line numbers",
         "number of relocations",
         "number of line numbers",
-    }) |desc, field_i| {
+    }, 0..) |desc, field_i| {
         const field = fields[field_i + 1];
         try writer.print("{x: >20} {s}\n", .{ @field(sect_hdr, field.name), desc });
     }
@@ -633,7 +633,7 @@ pub fn getSectionDataAlloc(self: *const Zcoff, comptime name: []const u8, alloca
 }
 
 pub fn getSectionByAddress(self: Zcoff, rva: u32) ?u16 {
-    for (self.getSectionHeaders()) |*sect_hdr, sect_id| {
+    for (self.getSectionHeaders(), 0..) |*sect_hdr, sect_id| {
         if (rva >= sect_hdr.virtual_address and rva < sect_hdr.virtual_address + sect_hdr.virtual_size)
             return @intCast(u16, sect_id);
     } else return null;
