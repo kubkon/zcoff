@@ -30,7 +30,7 @@ pub fn main() !void {
     });
     defer res.deinit();
 
-    if (res.args.help) {
+    if (res.args.help != 0) {
         return printUsageWithHelp(stderr, params[0..]);
     }
     if (res.positionals.len == 0) {
@@ -51,10 +51,10 @@ pub fn main() !void {
     const writer = if (out_file) |ff| ff.writer() else std.io.getStdOut().writer();
 
     return zcoff.print(writer, .{
-        .headers = res.args.headers,
-        .symbols = res.args.symbols,
-        .relocations = res.args.relocations,
-        .imports = res.args.imports,
+        .headers = res.args.headers != 0,
+        .symbols = res.args.symbols != 0,
+        .relocations = res.args.relocations != 0,
+        .imports = res.args.imports != 0,
     });
 }
 

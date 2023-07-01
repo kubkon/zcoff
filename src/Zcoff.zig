@@ -72,19 +72,19 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
     if (self.is_image) {
         const data_dirs = self.getDataDirectories();
-        base_relocs_dir = if (options.relocations and @enumToInt(coff.DirectoryEntry.BASERELOC) < data_dirs.len)
-            data_dirs[@enumToInt(coff.DirectoryEntry.BASERELOC)]
+        base_relocs_dir = if (options.relocations and @intFromEnum(coff.DirectoryEntry.BASERELOC) < data_dirs.len)
+            data_dirs[@intFromEnum(coff.DirectoryEntry.BASERELOC)]
         else
             null;
-        imports_dir = if (options.imports and @enumToInt(coff.DirectoryEntry.IMPORT) < data_dirs.len)
-            data_dirs[@enumToInt(coff.DirectoryEntry.IMPORT)]
+        imports_dir = if (options.imports and @intFromEnum(coff.DirectoryEntry.IMPORT) < data_dirs.len)
+            data_dirs[@intFromEnum(coff.DirectoryEntry.IMPORT)]
         else
             null;
     }
 
     const sections = self.getSectionHeaders();
     for (sections, 0..) |*sect_hdr, sect_id| {
-        if (options.headers) try self.printSectionHeader(writer, @intCast(u16, sect_id), sect_hdr);
+        if (options.headers) try self.printSectionHeader(writer, @intCast(sect_id), sect_hdr);
 
         if (base_relocs_dir) |dir| {
             if (self.getSectionByAddress(dir.virtual_address)) |search| blk: {
@@ -95,9 +95,9 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
                 var slice = base_relocs;
                 while (slice.len > 0) {
-                    const block = @ptrCast(*align(1) const coff.BaseRelocationDirectoryEntry, slice).*;
+                    const block = @as(*align(1) const coff.BaseRelocationDirectoryEntry, @ptrCast(slice)).*;
                     const num_relocs = @divExact(block.block_size - 8, @sizeOf(coff.BaseRelocation));
-                    const block_relocs = @ptrCast([*]align(1) const coff.BaseRelocation, slice[8..])[0..num_relocs];
+                    const block_relocs = @as([*]align(1) const coff.BaseRelocation, @ptrCast(slice[8..]))[0..num_relocs];
                     slice = slice[block.block_size..];
 
                     try writer.print("{x: >8} RVA, {x: >8} SizeOfBlock\n", .{ block.page_rva, block.block_size });
@@ -127,7 +127,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
                 const offset = dir.virtual_address - sect_hdr.virtual_address + sect_hdr.pointer_to_raw_data;
                 const raw_imports = self.data[offset..][0..dir.size];
                 const num_imports = @divExact(dir.size, @sizeOf(coff.ImportDirectoryEntry)) - 1; // We exclude the NULL entry
-                const imports = @ptrCast([*]align(1) const coff.ImportDirectoryEntry, raw_imports)[0..num_imports];
+                const imports = @as([*]align(1) const coff.ImportDirectoryEntry, @ptrCast(raw_imports))[0..num_imports];
 
                 const hdr = self.getOptionalHeader();
                 const is_32bit = hdr.magic == coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC;
@@ -135,7 +135,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
                 for (imports) |import| {
                     const name_offset = self.getFileOffsetForAddress(import.name_rva);
-                    const name = mem.sliceTo(@ptrCast([*:0]const u8, self.data.ptr + name_offset), 0);
+                    const name = mem.sliceTo(@as([*:0]const u8, @ptrCast(self.data.ptr + name_offset)), 0);
 
                     try writer.print("  {s}\n", .{name});
                     try writer.print("{x: >20} Import Address Table\n", .{import.import_address_table_rva + image_base});
@@ -145,28 +145,28 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
                     const lookup_table_offset = self.getFileOffsetForAddress(import.import_lookup_table_rva);
                     if (is_32bit) {
-                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]align(1) const u32, self.data.ptr + lookup_table_offset), 0);
+                        const raw_lookups = mem.sliceTo(@as([*:0]align(1) const u32, @ptrCast(self.data.ptr + lookup_table_offset)), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry32.getImportByOrdinal(rl)) |_| {
                                 // TODO
                             } else if (coff.ImportLookupEntry32.getImportByName(rl)) |by_name| {
                                 const by_name_offset = self.getFileOffsetForAddress(by_name.name_table_rva);
-                                const by_name_entry = @ptrCast(*align(1) const coff.ImportHintNameEntry, self.data.ptr + by_name_offset);
+                                const by_name_entry = @as(*align(1) const coff.ImportHintNameEntry, @ptrCast(self.data.ptr + by_name_offset));
                                 const symbol_hint = by_name_entry.hint;
-                                const symbol_name = mem.sliceTo(@ptrCast([*:0]const u8, &by_name_entry.name), 0);
+                                const symbol_name = mem.sliceTo(@as([*:0]const u8, @ptrCast(&by_name_entry.name)), 0);
                                 try writer.print("{x: >30} {s}\n", .{ symbol_hint, symbol_name });
                             } else unreachable;
                         }
                     } else {
-                        const raw_lookups = mem.sliceTo(@ptrCast([*:0]align(1) const u64, self.data.ptr + lookup_table_offset), 0);
+                        const raw_lookups = mem.sliceTo(@as([*:0]align(1) const u64, @ptrCast(self.data.ptr + lookup_table_offset)), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry64.getImportByOrdinal(rl)) |_| {
                                 // TODO
                             } else if (coff.ImportLookupEntry64.getImportByName(rl)) |by_name| {
                                 const by_name_offset = self.getFileOffsetForAddress(by_name.name_table_rva);
-                                const by_name_entry = @ptrCast(*align(1) const coff.ImportHintNameEntry, self.data.ptr + by_name_offset);
+                                const by_name_entry = @as(*align(1) const coff.ImportHintNameEntry, @ptrCast(self.data.ptr + by_name_offset));
                                 const symbol_hint = by_name_entry.hint;
-                                const symbol_name = mem.sliceTo(@ptrCast([*:0]const u8, &by_name_entry.name), 0);
+                                const symbol_name = mem.sliceTo(@as([*:0]const u8, @ptrCast(&by_name_entry.name)), 0);
                                 try writer.print("{x: >30} {s}\n", .{ symbol_hint, symbol_name });
                             } else unreachable;
                         }
@@ -186,7 +186,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
 
     // COFF header (object and image)
     try writer.writeAll("FILE HEADER VALUES\n");
-    try writer.print("{x: >20} machine ({s})\n", .{ @enumToInt(coff_header.machine), @tagName(coff_header.machine) });
+    try writer.print("{x: >20} machine ({s})\n", .{ @intFromEnum(coff_header.machine), @tagName(coff_header.machine) });
     {
         const fields = std.meta.fields(coff.CoffHeader);
         inline for (&[_][]const u8{
@@ -200,7 +200,7 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
             try writer.print("{x: >20} {s}\n", .{ @field(coff_header, field.name), desc });
         }
     }
-    try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, coff_header.flags), "flags" });
+    try writer.print("{x: >20} {s}\n", .{ @as(u16, @bitCast(coff_header.flags)), "flags" });
     {
         const fields = std.meta.fields(coff.CoffHeaderFlags);
         inline for (&[_][]const u8{
@@ -269,11 +269,11 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
                 }, 0..) |desc, i| {
                     const field = fields[i];
                     if (comptime mem.eql(u8, field.name, "dll_flags")) {
-                        try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, pe_header.dll_flags), desc });
+                        try writer.print("{x: >20} {s}\n", .{ @as(u16, @bitCast(pe_header.dll_flags)), desc });
                         try printDllFlags(pe_header.dll_flags, writer);
                     } else if (comptime mem.eql(u8, field.name, "subsystem")) {
                         try writer.print("{x: >20} {s} # ({s})\n", .{
-                            @enumToInt(pe_header.subsystem),
+                            @intFromEnum(pe_header.subsystem),
                             desc,
                             @tagName(pe_header.subsystem),
                         });
@@ -322,11 +322,11 @@ fn printHeaders(self: *Zcoff, writer: anytype) !void {
                 }, 0..) |desc, i| {
                     const field = fields[i];
                     if (comptime mem.eql(u8, field.name, "dll_flags")) {
-                        try writer.print("{x: >20} {s}\n", .{ @bitCast(u16, pe_header.dll_flags), desc });
+                        try writer.print("{x: >20} {s}\n", .{ @as(u16, @bitCast(pe_header.dll_flags)), desc });
                         try printDllFlags(pe_header.dll_flags, writer);
                     } else if (comptime mem.eql(u8, field.name, "subsystem")) {
                         try writer.print("{x: >20} {s} # ({s})\n", .{
-                            @enumToInt(pe_header.subsystem),
+                            @intFromEnum(pe_header.subsystem),
                             desc,
                             @tagName(pe_header.subsystem),
                         });
@@ -410,7 +410,7 @@ fn printSectionHeader(self: *Zcoff, writer: anytype, sect_id: u16, sect_hdr: *al
         try writer.print("{x: >20} {s}\n", .{ @field(sect_hdr, field.name), desc });
     }
 
-    try writer.print("{x: >20} flags\n", .{@bitCast(u32, sect_hdr.flags)});
+    try writer.print("{x: >20} flags\n", .{@as(u32, @bitCast(sect_hdr.flags))});
     inline for (std.meta.fields(coff.SectionHeaderFlags)) |flag_field| {
         if (flag_field.type == u1) {
             if (@field(sect_hdr.flags, flag_field.name) == 0b1) {
@@ -446,7 +446,7 @@ fn printSymbols(self: *Zcoff, writer: anytype) !void {
                 .ABSOLUTE,
                 .DEBUG,
                 => try writer.print("{s: <9} ", .{@tagName(sym.section_number)}),
-                else => try writer.print("SECT{d: <5} ", .{@enumToInt(sym.section_number)}),
+                else => try writer.print("SECT{d: <5} ", .{@intFromEnum(sym.section_number)}),
             }
             const name = sym.getName() orelse blk: {
                 const offset = sym.getNameOffset() orelse return error.MalformedSymbolRecord;
@@ -509,9 +509,9 @@ fn printSymbols(self: *Zcoff, writer: anytype) !void {
                         sect_def.checksum,
                     });
                     const st_sym = symtab.at(index - aux_counter, .symbol).symbol;
-                    const sect = sections[@enumToInt(st_sym.section_number) - 1];
+                    const sect = sections[@intFromEnum(st_sym.section_number) - 1];
                     if (sect.isComdat()) {
-                        try writer.print(", selection {d} ({s})", .{ @enumToInt(sect_def.selection), @tagName(sect_def.selection) });
+                        try writer.print(", selection {d} ({s})", .{ @intFromEnum(sect_def.selection), @tagName(sect_def.selection) });
                     } else {
                         assert(sect_def.selection == .NONE); // Expected non COMDAT section would not set the selection field in aux record.
                     }
@@ -532,25 +532,25 @@ fn printSymbols(self: *Zcoff, writer: anytype) !void {
 }
 
 pub fn getCoffHeader(self: Zcoff) coff.CoffHeader {
-    return @ptrCast(*align(1) const coff.CoffHeader, self.data[self.coff_header_offset..][0..@sizeOf(coff.CoffHeader)]).*;
+    return @as(*align(1) const coff.CoffHeader, @ptrCast(self.data[self.coff_header_offset..][0..@sizeOf(coff.CoffHeader)])).*;
 }
 
 pub fn getOptionalHeader(self: Zcoff) coff.OptionalHeader {
     assert(self.is_image);
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
-    return @ptrCast(*align(1) const coff.OptionalHeader, self.data[offset..][0..@sizeOf(coff.OptionalHeader)]).*;
+    return @as(*align(1) const coff.OptionalHeader, @ptrCast(self.data[offset..][0..@sizeOf(coff.OptionalHeader)])).*;
 }
 
 pub fn getOptionalHeader32(self: Zcoff) coff.OptionalHeaderPE32 {
     assert(self.is_image);
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
-    return @ptrCast(*align(1) const coff.OptionalHeaderPE32, self.data[offset..][0..@sizeOf(coff.OptionalHeaderPE32)]).*;
+    return @as(*align(1) const coff.OptionalHeaderPE32, @ptrCast(self.data[offset..][0..@sizeOf(coff.OptionalHeaderPE32)])).*;
 }
 
 pub fn getOptionalHeader64(self: Zcoff) coff.OptionalHeaderPE64 {
     assert(self.is_image);
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
-    return @ptrCast(*align(1) const coff.OptionalHeaderPE64, self.data[offset..][0..@sizeOf(coff.OptionalHeaderPE64)]).*;
+    return @as(*align(1) const coff.OptionalHeaderPE64, @ptrCast(self.data[offset..][0..@sizeOf(coff.OptionalHeaderPE64)])).*;
 }
 
 pub fn getImageBase(self: Zcoff) u64 {
@@ -579,7 +579,7 @@ pub fn getDataDirectories(self: *const Zcoff) []align(1) const coff.ImageDataDir
         else => unreachable, // We assume we have validated the header already
     };
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader) + size;
-    return @ptrCast([*]align(1) const coff.ImageDataDirectory, self.data[offset..])[0..self.getNumberOfDataDirectories()];
+    return @as([*]align(1) const coff.ImageDataDirectory, @ptrCast(self.data[offset..]))[0..self.getNumberOfDataDirectories()];
 }
 
 pub fn getSymtab(self: *const Zcoff) ?coff.Symtab {
@@ -603,7 +603,7 @@ pub fn getStrtab(self: *const Zcoff) ?coff.Strtab {
 pub fn getSectionHeaders(self: *const Zcoff) []align(1) const coff.SectionHeader {
     const coff_header = self.getCoffHeader();
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader) + coff_header.size_of_optional_header;
-    return @ptrCast([*]align(1) const coff.SectionHeader, self.data.ptr + offset)[0..coff_header.number_of_sections];
+    return @as([*]align(1) const coff.SectionHeader, @ptrCast(self.data.ptr + offset))[0..coff_header.number_of_sections];
 }
 
 pub fn getSectionName(self: *const Zcoff, sect_hdr: *align(1) const coff.SectionHeader) []const u8 {
@@ -635,7 +635,7 @@ pub fn getSectionDataAlloc(self: *const Zcoff, comptime name: []const u8, alloca
 pub fn getSectionByAddress(self: Zcoff, rva: u32) ?u16 {
     for (self.getSectionHeaders(), 0..) |*sect_hdr, sect_id| {
         if (rva >= sect_hdr.virtual_address and rva < sect_hdr.virtual_address + sect_hdr.virtual_size)
-            return @intCast(u16, sect_id);
+            return @as(u16, @intCast(sect_id));
     } else return null;
 }
 
