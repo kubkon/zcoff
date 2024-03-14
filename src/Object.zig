@@ -1,34 +1,15 @@
-const Zcoff = @This();
-
-const std = @import("std");
-const assert = std.debug.assert;
-const coff = std.coff;
-const fs = std.fs;
-const mem = std.mem;
-
-const Allocator = mem.Allocator;
-
 gpa: Allocator,
 data: []const u8,
+path: []const u8,
+
 is_image: bool = false,
 coff_header_offset: usize = 0,
 
-const Options = struct {
-    headers: bool,
-    symbols: bool,
-    relocations: bool,
-    imports: bool,
-};
-
-pub fn deinit(self: *Zcoff) void {
-    self.gpa.free(self.data);
+pub fn deinit(self: *Object) void {
+    self.gpa.free(self.path);
 }
 
-pub fn parse(gpa: Allocator, file: fs.File) !Zcoff {
-    const stat = try file.stat();
-    const data = try file.readToEndAlloc(gpa, stat.size);
-    var self = Zcoff{ .gpa = gpa, .data = data };
-
+pub fn parse(self: *Object) !void {
     const msdos_magic = "MZ";
     const pe_pointer_offset = 0x3C;
     const pe_magic = "PE\x00\x00";
@@ -39,7 +20,7 @@ pub fn parse(gpa: Allocator, file: fs.File) !Zcoff {
         var stream = std.io.fixedBufferStream(self.data);
         const reader = stream.reader();
         try stream.seekTo(pe_pointer_offset);
-        const coff_header_offset = try reader.readIntLittle(u32);
+        const coff_header_offset = try reader.readInt(u32, .little);
         try stream.seekTo(coff_header_offset);
         var buf: [4]u8 = undefined;
         try reader.readNoEof(&buf);
@@ -50,11 +31,9 @@ pub fn parse(gpa: Allocator, file: fs.File) !Zcoff {
         const coff_header = self.getCoffHeader();
         if (coff_header.size_of_optional_header == 0) return error.MissingPEHeader;
     }
-
-    return self;
 }
 
-pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
+pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     if (self.is_image) {
         try writer.writeAll("PE signature found\n\n");
         try writer.writeAll("File type: EXECUTABLE IMAGE\n\n");
@@ -107,7 +86,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
                             .ABSOLUTE => {},
                             .DIR64 => {
                                 const rebase_offset = self.getFileOffsetForAddress(block.page_rva + brel.offset);
-                                const pointer = mem.readIntLittle(u64, self.data[rebase_offset..][0..8]);
+                                const pointer = mem.readInt(u64, self.data[rebase_offset..][0..8], .little);
                                 try writer.print(" {x:0>16}", .{pointer});
                             },
                             else => {}, // TODO
@@ -145,7 +124,8 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
 
                     const lookup_table_offset = self.getFileOffsetForAddress(import.import_lookup_table_rva);
                     if (is_32bit) {
-                        const raw_lookups = mem.sliceTo(@as([*:0]align(1) const u32, @ptrCast(self.data.ptr + lookup_table_offset)), 0);
+                        const raw_ptr = try std.math.alignCast(4, self.data.ptr + lookup_table_offset);
+                        const raw_lookups = mem.sliceTo(@as([*:0]const u32, @ptrCast(raw_ptr)), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry32.getImportByOrdinal(rl)) |_| {
                                 // TODO
@@ -158,7 +138,8 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
                             } else unreachable;
                         }
                     } else {
-                        const raw_lookups = mem.sliceTo(@as([*:0]align(1) const u64, @ptrCast(self.data.ptr + lookup_table_offset)), 0);
+                        const raw_ptr = try std.math.alignCast(8, self.data.ptr + lookup_table_offset);
+                        const raw_lookups = mem.sliceTo(@as([*:0]const u64, @ptrCast(raw_ptr)), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry64.getImportByOrdinal(rl)) |_| {
                                 // TODO
@@ -181,7 +162,7 @@ pub fn print(self: *Zcoff, writer: anytype, options: Options) !void {
     if (options.symbols) try self.printSymbols(writer);
 }
 
-fn printHeaders(self: *Zcoff, writer: anytype) !void {
+fn printHeaders(self: *Object, writer: anytype) !void {
     const coff_header = self.getCoffHeader();
 
     // COFF header (object and image)
@@ -388,7 +369,7 @@ fn printDllFlags(flags: coff.DllFlags, writer: anytype) !void {
     }
 }
 
-fn printSectionHeader(self: *Zcoff, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
+fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
     const fields = std.meta.fields(coff.SectionHeader);
 
     try writer.print("SECTION HEADER #{d}\n", .{sect_id + 1});
@@ -424,7 +405,7 @@ fn printSectionHeader(self: *Zcoff, writer: anytype, sect_id: u16, sect_hdr: *al
     try writer.writeByte('\n');
 }
 
-fn printSymbols(self: *Zcoff, writer: anytype) !void {
+fn printSymbols(self: *Object, writer: anytype) !void {
     const symtab = self.getSymtab() orelse {
         return writer.writeAll("No symbol table found.\n");
     };
@@ -531,29 +512,29 @@ fn printSymbols(self: *Zcoff, writer: anytype) !void {
     try writer.print("\nString table size = 0x{x} bytes\n", .{strtab.buffer.len});
 }
 
-pub fn getCoffHeader(self: Zcoff) coff.CoffHeader {
+pub fn getCoffHeader(self: Object) coff.CoffHeader {
     return @as(*align(1) const coff.CoffHeader, @ptrCast(self.data[self.coff_header_offset..][0..@sizeOf(coff.CoffHeader)])).*;
 }
 
-pub fn getOptionalHeader(self: Zcoff) coff.OptionalHeader {
+pub fn getOptionalHeader(self: Object) coff.OptionalHeader {
     assert(self.is_image);
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
     return @as(*align(1) const coff.OptionalHeader, @ptrCast(self.data[offset..][0..@sizeOf(coff.OptionalHeader)])).*;
 }
 
-pub fn getOptionalHeader32(self: Zcoff) coff.OptionalHeaderPE32 {
+pub fn getOptionalHeader32(self: Object) coff.OptionalHeaderPE32 {
     assert(self.is_image);
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
     return @as(*align(1) const coff.OptionalHeaderPE32, @ptrCast(self.data[offset..][0..@sizeOf(coff.OptionalHeaderPE32)])).*;
 }
 
-pub fn getOptionalHeader64(self: Zcoff) coff.OptionalHeaderPE64 {
+pub fn getOptionalHeader64(self: Object) coff.OptionalHeaderPE64 {
     assert(self.is_image);
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader);
     return @as(*align(1) const coff.OptionalHeaderPE64, @ptrCast(self.data[offset..][0..@sizeOf(coff.OptionalHeaderPE64)])).*;
 }
 
-pub fn getImageBase(self: Zcoff) u64 {
+pub fn getImageBase(self: Object) u64 {
     const hdr = self.getOptionalHeader();
     return switch (hdr.magic) {
         coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC => self.getOptionalHeader32().image_base,
@@ -562,7 +543,7 @@ pub fn getImageBase(self: Zcoff) u64 {
     };
 }
 
-pub fn getNumberOfDataDirectories(self: Zcoff) u32 {
+pub fn getNumberOfDataDirectories(self: Object) u32 {
     const hdr = self.getOptionalHeader();
     return switch (hdr.magic) {
         coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC => self.getOptionalHeader32().number_of_rva_and_sizes,
@@ -571,7 +552,7 @@ pub fn getNumberOfDataDirectories(self: Zcoff) u32 {
     };
 }
 
-pub fn getDataDirectories(self: *const Zcoff) []align(1) const coff.ImageDataDirectory {
+pub fn getDataDirectories(self: *const Object) []align(1) const coff.ImageDataDirectory {
     const hdr = self.getOptionalHeader();
     const size: usize = switch (hdr.magic) {
         coff.IMAGE_NT_OPTIONAL_HDR32_MAGIC => @sizeOf(coff.OptionalHeaderPE32),
@@ -582,7 +563,7 @@ pub fn getDataDirectories(self: *const Zcoff) []align(1) const coff.ImageDataDir
     return @as([*]align(1) const coff.ImageDataDirectory, @ptrCast(self.data[offset..]))[0..self.getNumberOfDataDirectories()];
 }
 
-pub fn getSymtab(self: *const Zcoff) ?coff.Symtab {
+pub fn getSymtab(self: *const Object) ?coff.Symtab {
     const coff_header = self.getCoffHeader();
     if (coff_header.pointer_to_symbol_table == 0) return null;
 
@@ -591,22 +572,22 @@ pub fn getSymtab(self: *const Zcoff) ?coff.Symtab {
     return .{ .buffer = self.data[offset..][0..size] };
 }
 
-pub fn getStrtab(self: *const Zcoff) ?coff.Strtab {
+pub fn getStrtab(self: *const Object) ?coff.Strtab {
     const coff_header = self.getCoffHeader();
     if (coff_header.pointer_to_symbol_table == 0) return null;
 
     const offset = coff_header.pointer_to_symbol_table + coff.Symbol.sizeOf() * coff_header.number_of_symbols;
-    const size = mem.readIntLittle(u32, self.data[offset..][0..4]);
+    const size = mem.readInt(u32, self.data[offset..][0..4], .little);
     return .{ .buffer = self.data[offset..][0..size] };
 }
 
-pub fn getSectionHeaders(self: *const Zcoff) []align(1) const coff.SectionHeader {
+pub fn getSectionHeaders(self: *const Object) []align(1) const coff.SectionHeader {
     const coff_header = self.getCoffHeader();
     const offset = self.coff_header_offset + @sizeOf(coff.CoffHeader) + coff_header.size_of_optional_header;
     return @as([*]align(1) const coff.SectionHeader, @ptrCast(self.data.ptr + offset))[0..coff_header.number_of_sections];
 }
 
-pub fn getSectionName(self: *const Zcoff, sect_hdr: *align(1) const coff.SectionHeader) []const u8 {
+pub fn getSectionName(self: *const Object, sect_hdr: *align(1) const coff.SectionHeader) []const u8 {
     const name = sect_hdr.getName() orelse blk: {
         const strtab = self.getStrtab().?;
         const name_offset = sect_hdr.getNameOffset().?;
@@ -615,7 +596,7 @@ pub fn getSectionName(self: *const Zcoff, sect_hdr: *align(1) const coff.Section
     return name;
 }
 
-pub fn getSectionByName(self: *const Zcoff, comptime name: []const u8) ?*align(1) const coff.SectionHeader {
+pub fn getSectionByName(self: *const Object, comptime name: []const u8) ?*align(1) const coff.SectionHeader {
     for (self.getSectionHeaders()) |*sect| {
         if (mem.eql(u8, self.getSectionName(sect), name)) {
             return sect;
@@ -625,23 +606,32 @@ pub fn getSectionByName(self: *const Zcoff, comptime name: []const u8) ?*align(1
 }
 
 // Return an owned slice full of the section data
-pub fn getSectionDataAlloc(self: *const Zcoff, comptime name: []const u8, allocator: Allocator) ![]u8 {
+pub fn getSectionDataAlloc(self: *const Object, comptime name: []const u8, allocator: Allocator) ![]u8 {
     const sec = self.getSectionByName(name) orelse return error.MissingCoffSection;
     const out_buff = try allocator.alloc(u8, sec.virtual_size);
     mem.copy(u8, out_buff, self.data[sec.pointer_to_raw_data..][0..sec.virtual_size]);
     return out_buff;
 }
 
-pub fn getSectionByAddress(self: Zcoff, rva: u32) ?u16 {
+pub fn getSectionByAddress(self: Object, rva: u32) ?u16 {
     for (self.getSectionHeaders(), 0..) |*sect_hdr, sect_id| {
         if (rva >= sect_hdr.virtual_address and rva < sect_hdr.virtual_address + sect_hdr.virtual_size)
             return @as(u16, @intCast(sect_id));
     } else return null;
 }
 
-pub fn getFileOffsetForAddress(self: Zcoff, rva: u32) u32 {
+pub fn getFileOffsetForAddress(self: Object, rva: u32) u32 {
     const sections = self.getSectionHeaders();
     const sect_id = self.getSectionByAddress(rva).?;
     const sect = &sections[sect_id];
     return rva - sect.virtual_address + sect.pointer_to_raw_data;
 }
+
+const assert = std.debug.assert;
+const coff = std.coff;
+const fs = std.fs;
+const mem = std.mem;
+const std = @import("std");
+
+const Allocator = mem.Allocator;
+const Object = @This();

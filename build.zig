@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build.Builder) void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const mode = b.standardOptimizeOption(.{});
 
@@ -9,9 +9,6 @@ pub fn build(b: *std.Build.Builder) void {
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = mode,
-    });
-    _ = exe.addAnonymousModule("clap", .{
-        .source_file = .{ .path = "zig-clap/clap.zig" },
     });
     b.installArtifact(exe);
 

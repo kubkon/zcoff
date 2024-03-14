@@ -1,66 +1,124 @@
 const std = @import("std");
-const clap = @import("clap");
-const process = std.process;
+const Object = @import("Object.zig");
 
-const Zcoff = @import("Zcoff.zig");
+var allocator = std.heap.GeneralPurposeAllocator(.{}){};
+const gpa = allocator.allocator();
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const usage =
+    \\Usage: zcoff [options] file
+    \\
+    \\General options:
+    \\--headers                   Print headers.
+    \\--symbols                   Print symbol table.
+    \\--imports                   Print import table.
+    \\--relocations               Print relocations.
+    \\--help                      Display this help and exit.
+    \\
+;
+
+fn fatal(comptime format: []const u8, args: anytype) noreturn {
+    ret: {
+        const msg = std.fmt.allocPrint(gpa, format ++ "\n", args) catch break :ret;
+        std.io.getStdErr().writeAll(msg) catch {};
+    }
+    std.process.exit(1);
+}
+
+const ArgsIterator = struct {
+    args: []const []const u8,
+    i: usize = 0,
+
+    fn next(it: *@This()) ?[]const u8 {
+        if (it.i >= it.args.len) {
+            return null;
+        }
+        defer it.i += 1;
+        return it.args[it.i];
+    }
+
+    fn nextOrFatal(it: *@This()) []const u8 {
+        return it.next() orelse fatal("expected parameter after {s}", .{it.args[it.i - 1]});
+    }
+};
 
 pub fn main() !void {
-    const stderr = std.io.getStdErr().writer();
+    var arena_allocator = std.heap.ArenaAllocator.init(gpa);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
 
-    const params = comptime [_]clap.Param(clap.Help){
-        clap.parseParam("--help          Display this help and exit.") catch unreachable,
-        clap.parseParam("--headers       Print headers.") catch unreachable,
-        clap.parseParam("--symbols       Print symbol table.") catch unreachable,
-        clap.parseParam("--imports       Print import table.") catch unreachable,
-        clap.parseParam("--relocations   Print relocations.") catch unreachable,
-        clap.parseParam("--out <OUT>     Save to file.") catch unreachable,
-        clap.parseParam("<FILE>") catch unreachable,
-    };
+    const all_args = try std.process.argsAlloc(arena);
+    const args = all_args[1..];
 
-    const parsers = comptime .{
-        .OUT = clap.parsers.string,
-        .FILE = clap.parsers.string,
-    };
+    if (args.len == 0) fatal(usage, .{});
 
-    var res = try clap.parse(clap.Help, &params, parsers, .{
-        .allocator = gpa.allocator(),
-        .diagnostic = null,
-    });
-    defer res.deinit();
+    var filename: ?[]const u8 = null;
+    var print_matrix: PrintMatrix = .{};
 
-    if (res.args.help != 0) {
-        return printUsageWithHelp(stderr, params[0..]);
+    var it = ArgsIterator{ .args = args };
+    while (it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--help")) {
+            fatal(usage, .{});
+        } else if (std.mem.eql(u8, arg, "--headers")) {
+            print_matrix.headers = true;
+        } else if (std.mem.eql(u8, arg, "--symbols")) {
+            print_matrix.symbols = true;
+        } else if (std.mem.eql(u8, arg, "--imports")) {
+            print_matrix.imports = true;
+        } else if (std.mem.eql(u8, arg, "--relocations")) {
+            print_matrix.relocations = true;
+        } else {
+            if (filename != null) fatal("too many positional arguments specified", .{});
+            filename = arg;
+        }
     }
-    if (res.positionals.len == 0) {
-        return stderr.print("missing positional argument <FILE>...\n", .{});
-    }
 
-    const filename = res.positionals[0];
-    const file = try std.fs.cwd().openFile(filename, .{});
+    const fname = filename orelse fatal("no input file specified", .{});
+    const file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
+    const data = try file.readToEndAlloc(arena, std.math.maxInt(u32));
 
-    var zcoff = try Zcoff.parse(gpa.allocator(), file);
-    defer zcoff.deinit();
+    const stdout = std.io.getStdOut().writer();
+    if (print_matrix.isUnset()) fatal("no option specified", .{});
 
-    const out_file: ?std.fs.File = if (res.args.out) |out| try std.fs.cwd().createFile(out, .{
-        .truncate = true,
-    }) else null;
-    defer if (out_file) |ff| ff.close();
-    const writer = if (out_file) |ff| ff.writer() else std.io.getStdOut().writer();
-
-    return zcoff.print(writer, .{
-        .headers = res.args.headers != 0,
-        .symbols = res.args.symbols != 0,
-        .relocations = res.args.relocations != 0,
-        .imports = res.args.imports != 0,
-    });
+    var object = Object{
+        .gpa = gpa,
+        .data = data,
+        .path = try gpa.dupe(u8, fname),
+    };
+    defer object.deinit();
+    object.parse() catch |err| switch (err) {
+        error.InvalidPEHeaderMagic => fatal("invalid PE file - invalid magic bytes", .{}),
+        error.MissingPEHeader => fatal("invalid PE file - missing PE header", .{}),
+        else => |e| return e,
+    };
+    try object.print(stdout, print_matrix);
 }
 
-fn printUsageWithHelp(stream: anytype, comptime params: []const clap.Param(clap.Help)) !void {
-    try stream.print("zcoff ", .{});
-    try clap.usage(stream, clap.Help, params);
-    try stream.print("\n", .{});
-    try clap.help(stream, clap.Help, params, .{});
-}
+pub const PrintMatrix = packed struct {
+    headers: bool = false,
+    symbols: bool = false,
+    imports: bool = false,
+    relocations: bool = false,
+
+    const Int = blk: {
+        const bits = @typeInfo(@This()).Struct.fields.len;
+        break :blk @Type(.{
+            .Int = .{
+                .signedness = .unsigned,
+                .bits = bits,
+            },
+        });
+    };
+
+    fn enableAll() @This() {
+        return @as(@This(), @bitCast(~@as(Int, 0)));
+    }
+
+    fn isUnset(pm: @This()) bool {
+        return @as(Int, @bitCast(pm)) == 0;
+    }
+
+    fn add(pm: *@This(), other: @This()) void {
+        pm.* = @as(@This(), @bitCast(@as(Int, @bitCast(pm.*)) | @as(Int, @bitCast(other))));
+    }
+};
