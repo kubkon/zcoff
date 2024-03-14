@@ -64,6 +64,7 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     const sections = self.getSectionHeaders();
     for (sections, 0..) |*sect_hdr, sect_id| {
         if (options.headers) try self.printSectionHeader(writer, @intCast(sect_id), sect_hdr);
+        if (options.relocations and sect_hdr.number_of_relocations > 0) try self.printRelocations(writer, @intCast(sect_id), sect_hdr);
 
         if (base_relocs_dir) |dir| {
             if (self.getSectionByAddress(dir.virtual_address)) |search| blk: {
@@ -405,6 +406,14 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
     try writer.writeByte('\n');
 }
 
+fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
+    try writer.print("RELOC TABLE FOR SECTION #{d}\n", .{sect_id + 1});
+    const raw_relocs = @as([*]align(1) const Relocation, @ptrCast(self.data.ptr + sect_hdr.pointer_to_relocations))[0..sect_hdr.number_of_relocations];
+    for (raw_relocs) |reloc| {
+        try writer.print("{any}\n", .{reloc});
+    }
+}
+
 fn printSymbols(self: *Object, writer: anytype) !void {
     const symtab = self.getSymtab() orelse {
         return writer.writeAll("No symbol table found.\n");
@@ -626,6 +635,12 @@ pub fn getFileOffsetForAddress(self: Object, rva: u32) u32 {
     const sect = &sections[sect_id];
     return rva - sect.virtual_address + sect.pointer_to_raw_data;
 }
+
+const Relocation = extern struct {
+    VirtualAddress: u32,
+    SymbolTableIndex: u32,
+    Type: u16,
+};
 
 const assert = std.debug.assert;
 const coff = std.coff;
