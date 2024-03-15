@@ -407,17 +407,47 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
 }
 
 fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
-    try writer.print("RELOC TABLE FOR SECTION #{d}\n", .{sect_id + 1});
-    const raw_relocs = @as([*]align(1) const Relocation, @ptrCast(self.data.ptr + sect_hdr.pointer_to_relocations))[0..sect_hdr.number_of_relocations];
+    try writer.print("RELOCATIONS #{d}\n\n", .{sect_id + 1});
     const machine = self.getCoffHeader().machine;
-    for (raw_relocs) |reloc| {
+    var i: usize = 0;
+    var offset = sect_hdr.pointer_to_relocations;
+    const data = self.getSectionData(sect_id);
+    const symtab = self.getSymtab().?;
+    const strtab = self.getStrtab().?;
+    try writer.print(" {s: <8} {s: <16} {s: <16} {s: <12} {s}\n", .{ "Offset", "Type", "Applied To", "Symbol Index", "Symbol Name" });
+    try writer.print(" {s:_<8} {s:_<16} {s:_<16} {s:_<12} {s:_<11}\n", .{ "_", "_", "_", "_", "_" });
+    while (i < sect_hdr.number_of_relocations) : (i += 1) {
+        const reloc = @as(*align(1) const Relocation, @ptrCast(self.data.ptr + offset)).*;
+        // Reloc type
+        var rel_type_buffer: [16]u8 = [_]u8{' '} ** 16;
         const rel_type = switch (machine) {
-            .X64 => @tagName(@as(ImageRelAmd64, @enumFromInt(reloc.Type))),
-            .ARM64 => @tagName(@as(ImageRelArm64, @enumFromInt(reloc.Type))),
+            .X64 => @tagName(@as(ImageRelAmd64, @enumFromInt(reloc.type))),
+            .ARM64 => @tagName(@as(ImageRelArm64, @enumFromInt(reloc.type))),
             else => "unknown",
         };
-        try writer.print("{s} {any}\n", .{ rel_type, reloc });
+        @memcpy(rel_type_buffer[0..rel_type.len], rel_type); // TODO check we don't overflow
+        _ = std.ascii.upperString(&rel_type_buffer, &rel_type_buffer);
+        // Applied To
+        const code = mem.readInt(u32, data[reloc.virtual_address..][0..4], .little);
+        // Symbol Index + Name
+        const sym = symtab.at(reloc.symbol_table_index, .symbol).symbol;
+        const name = sym.getName() orelse blk: {
+            const off = sym.getNameOffset() orelse return error.MalformedSymbolRecord;
+            break :blk strtab.get(off);
+        };
+
+        try writer.print(" {x:0>8} {s: <16} {s: <8}{x:0>8} {X: >12} {s}\n", .{
+            reloc.virtual_address,
+            &rel_type_buffer,
+            " ",
+            code,
+            reloc.symbol_table_index,
+            name,
+        });
+
+        offset += 10;
     }
+    try writer.writeByte('\n');
 }
 
 fn printSymbols(self: *Object, writer: anytype) !void {
@@ -620,12 +650,9 @@ pub fn getSectionByName(self: *const Object, comptime name: []const u8) ?*align(
     return null;
 }
 
-// Return an owned slice full of the section data
-pub fn getSectionDataAlloc(self: *const Object, comptime name: []const u8, allocator: Allocator) ![]u8 {
-    const sec = self.getSectionByName(name) orelse return error.MissingCoffSection;
-    const out_buff = try allocator.alloc(u8, sec.virtual_size);
-    mem.copy(u8, out_buff, self.data[sec.pointer_to_raw_data..][0..sec.virtual_size]);
-    return out_buff;
+pub fn getSectionData(self: *const Object, sect_id: u16) []const u8 {
+    const sec = self.getSectionHeaders()[sect_id];
+    return self.data[sec.pointer_to_raw_data..][0..sec.size_of_raw_data];
 }
 
 pub fn getSectionByAddress(self: Object, rva: u32) ?u16 {
@@ -643,9 +670,9 @@ pub fn getFileOffsetForAddress(self: Object, rva: u32) u32 {
 }
 
 const Relocation = extern struct {
-    VirtualAddress: u32,
-    SymbolTableIndex: u32,
-    Type: u16,
+    virtual_address: u32,
+    symbol_table_index: u32,
+    type: u16,
 };
 
 const ImageRelAmd64 = enum(u16) {
@@ -717,7 +744,7 @@ const ImageRelArm64 = enum(u16) {
     branch26 = 3,
 
     /// The page base of the target, for ADRP instruction.
-    pagebase_rel32 = 4,
+    pagebase_rel21 = 4,
 
     /// The 21-bit relative displacement to the target, for instruction ADR.
     rel21 = 5,
