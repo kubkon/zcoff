@@ -409,8 +409,14 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
 fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
     try writer.print("RELOC TABLE FOR SECTION #{d}\n", .{sect_id + 1});
     const raw_relocs = @as([*]align(1) const Relocation, @ptrCast(self.data.ptr + sect_hdr.pointer_to_relocations))[0..sect_hdr.number_of_relocations];
+    const machine = self.getCoffHeader().machine;
     for (raw_relocs) |reloc| {
-        try writer.print("{any}\n", .{reloc});
+        const rel_type = switch (machine) {
+            .X64 => @tagName(@as(ImageRelAmd64, @enumFromInt(reloc.Type))),
+            .ARM64 => @tagName(@as(ImageRelArm64, @enumFromInt(reloc.Type))),
+            else => "unknown",
+        };
+        try writer.print("{s} {any}\n", .{ rel_type, reloc });
     }
 }
 
