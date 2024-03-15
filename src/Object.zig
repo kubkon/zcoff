@@ -373,7 +373,7 @@ fn printDllFlags(flags: coff.DllFlags, writer: anytype) !void {
 fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
     const fields = std.meta.fields(coff.SectionHeader);
 
-    try writer.print("SECTION HEADER #{d}\n", .{sect_id + 1});
+    try writer.print("SECTION HEADER #{X}\n", .{sect_id + 1});
 
     const name = self.getSectionName(sect_hdr);
     try writer.print("{s: >20} name\n", .{name});
@@ -407,7 +407,7 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
 }
 
 fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
-    try writer.print("RELOCATIONS #{d}\n\n", .{sect_id + 1});
+    try writer.print("RELOCATIONS #{X}\n\n", .{sect_id + 1});
     const machine = self.getCoffHeader().machine;
     var i: usize = 0;
     var offset = sect_hdr.pointer_to_relocations;
@@ -427,8 +427,28 @@ fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *ali
         };
         @memcpy(rel_type_buffer[0..rel_type.len], rel_type); // TODO check we don't overflow
         _ = std.ascii.upperString(&rel_type_buffer, &rel_type_buffer);
+        try writer.print(" {X:0>8} {s: <16}", .{
+            reloc.virtual_address,
+            &rel_type_buffer,
+        });
         // Applied To
-        const code = mem.readInt(u32, data[reloc.virtual_address..][0..4], .little);
+        const code_size = reloc.getCodeSize(self.*);
+        const code = switch (code_size) {
+            0 => 0,
+            1 => data[reloc.virtual_address],
+            2 => mem.readInt(u16, data[reloc.virtual_address..][0..2], .little),
+            4 => mem.readInt(u32, data[reloc.virtual_address..][0..4], .little),
+            8 => mem.readInt(u64, data[reloc.virtual_address..][0..8], .little),
+            else => unreachable,
+        };
+        switch (code_size) {
+            0 => try writer.print("{s: <16}", .{" "}),
+            1 => try writer.print("{s: <15}{X:0>2}", .{ " ", code }),
+            2 => try writer.print("{s: <12}{X:0>4}", .{ " ", code }),
+            4 => try writer.print("{s: <8}{X:0>8}", .{ " ", code }),
+            8 => try writer.print("{X:0>16}", .{code}),
+            else => unreachable,
+        }
         // Symbol Index + Name
         const sym = symtab.at(reloc.symbol_table_index, .symbol).symbol;
         const name = sym.getName() orelse blk: {
@@ -436,11 +456,7 @@ fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *ali
             break :blk strtab.get(off);
         };
 
-        try writer.print(" {x:0>8} {s: <16} {s: <8}{x:0>8} {X: >12} {s}\n", .{
-            reloc.virtual_address,
-            &rel_type_buffer,
-            " ",
-            code,
+        try writer.print(" {X: >12} {s}\n", .{
             reloc.symbol_table_index,
             name,
         });
@@ -673,6 +689,55 @@ const Relocation = extern struct {
     virtual_address: u32,
     symbol_table_index: u32,
     type: u16,
+
+    fn getCodeSize(rel: Relocation, obj: Object) u8 {
+        const machine = obj.getCoffHeader().machine;
+        return switch (machine) {
+            .X64 => switch (@as(ImageRelAmd64, @enumFromInt(rel.type))) {
+                .absolute => 0,
+                .addr64 => 8,
+                .addr32,
+                .addr32nb,
+                .rel32,
+                .rel32_1,
+                .rel32_2,
+                .rel32_3,
+                .rel32_4,
+                .rel32_5,
+                => 4,
+                .section => 2,
+                .secrel => 4,
+                .secrel7 => 1,
+                .token => 8,
+                .srel32 => 4,
+                .pair,
+                .sspan32,
+                => 4,
+            },
+            .ARM64 => switch (@as(ImageRelArm64, @enumFromInt(rel.type))) {
+                .absolute => 0,
+                .addr32,
+                .addr32nb,
+                => 4,
+                .branch26,
+                .pagebase_rel21,
+                .rel21,
+                .pageoffset_12a,
+                .pageoffset_12l,
+                .low12a,
+                .high12a,
+                .low12l,
+                => 4,
+                .secrel => 4,
+                .token => 8,
+                .section => 2,
+                .addr64 => 8,
+                .branch19, .branch14 => 4,
+                .rel32 => 4,
+            },
+            else => @panic("TODO this arch support"),
+        };
+    }
 };
 
 const ImageRelAmd64 = enum(u16) {
