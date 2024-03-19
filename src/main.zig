@@ -8,11 +8,12 @@ const usage =
     \\Usage: zcoff [options] file
     \\
     \\General options:
-    \\--headers                   Print headers.
-    \\--symbols                   Print symbol table.
-    \\--imports                   Print import table.
-    \\--relocations               Print relocations.
-    \\--help                      Display this help and exit.
+    \\-directives                Print linker directives.
+    \\-headers                   Print headers.
+    \\-symbols                   Print symbol table.
+    \\-imports                   Print import table.
+    \\-relocations               Print relocations.
+    \\-help, /?                  Display this help and exit.
     \\
 ;
 
@@ -41,6 +42,53 @@ const ArgsIterator = struct {
     }
 };
 
+const ArgsParser = struct {
+    next_arg: []const u8 = undefined,
+    it: *ArgsIterator,
+
+    pub fn hasMore(p: *ArgsParser) bool {
+        p.next_arg = p.it.next() orelse return false;
+        return true;
+    }
+
+    pub fn flagAny(p: *ArgsParser, comptime pat: []const u8) bool {
+        return p.flagPrefix(pat, "-") or p.flagWindows(pat);
+    }
+
+    pub fn flagWindows(p: *ArgsParser, comptime pat: []const u8) bool {
+        return p.flagPrefix(pat, "/");
+    }
+
+    fn flagPrefix(p: *ArgsParser, comptime pat: []const u8, comptime prefix: []const u8) bool {
+        if (std.mem.startsWith(u8, p.next_arg, prefix)) {
+            const actual_arg = p.next_arg[prefix.len..];
+            if (std.mem.eql(u8, actual_arg, pat)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn arg(p: *ArgsParser, comptime pat: []const u8) ?[]const u8 {
+        return p.argPrefix(pat, "-") orelse p.argPrefix(pat, "/");
+    }
+
+    fn argPrefix(p: *ArgsParser, comptime pat: []const u8, comptime prefix: []const u8) ?[]const u8 {
+        if (std.mem.startsWith(u8, p.next_arg, prefix)) {
+            const actual_arg = p.next_arg[prefix.len..];
+            if (std.mem.startsWith(u8, actual_arg, pat)) {
+                if (std.mem.indexOf(u8, actual_arg, ":")) |index| {
+                    if (index == pat.len) {
+                        const value = actual_arg[index + 1 ..];
+                        return value;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+};
+
 pub fn main() !void {
     var arena_allocator = std.heap.ArenaAllocator.init(gpa);
     defer arena_allocator.deinit();
@@ -55,20 +103,23 @@ pub fn main() !void {
     var print_matrix: PrintMatrix = .{};
 
     var it = ArgsIterator{ .args = args };
-    while (it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--help")) {
+    var p = ArgsParser{ .it = &it };
+    while (p.hasMore()) {
+        if (p.flagAny("help") or p.flagWindows("?")) {
             fatal(usage, .{});
-        } else if (std.mem.eql(u8, arg, "--headers")) {
+        } else if (p.flagAny("directives")) {
+            print_matrix.directives = true;
+        } else if (p.flagAny("headers")) {
             print_matrix.headers = true;
-        } else if (std.mem.eql(u8, arg, "--symbols")) {
+        } else if (p.flagAny("symbols")) {
             print_matrix.symbols = true;
-        } else if (std.mem.eql(u8, arg, "--imports")) {
+        } else if (p.flagAny("imports")) {
             print_matrix.imports = true;
-        } else if (std.mem.eql(u8, arg, "--relocations")) {
+        } else if (p.flagAny("relocations")) {
             print_matrix.relocations = true;
         } else {
             if (filename != null) fatal("too many positional arguments specified", .{});
-            filename = arg;
+            filename = p.next_arg;
         }
     }
 
@@ -78,8 +129,6 @@ pub fn main() !void {
     const data = try file.readToEndAlloc(arena, std.math.maxInt(u32));
 
     const stdout = std.io.getStdOut().writer();
-    if (print_matrix.isUnset()) fatal("no option specified", .{});
-
     var object = Object{
         .gpa = gpa,
         .data = data,
@@ -95,6 +144,7 @@ pub fn main() !void {
 }
 
 pub const PrintMatrix = packed struct {
+    directives: bool = false,
     headers: bool = false,
     symbols: bool = false,
     imports: bool = false,

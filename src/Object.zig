@@ -43,8 +43,7 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     }
 
     if (options.headers) try self.printHeaders(writer);
-
-    try writer.writeByte('\n');
+    if (options.directives) try self.printDirectives(writer);
 
     var base_relocs_dir: ?coff.ImageDataDirectory = null;
     var imports_dir: ?coff.ImageDataDirectory = null;
@@ -69,7 +68,7 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
         if (base_relocs_dir) |dir| {
             if (self.getSectionByAddress(dir.virtual_address)) |search| blk: {
                 if (search != sect_id) break :blk;
-                try writer.print("BASE RELOCATIONS #{d}\n", .{sect_id + 1});
+                try writer.print("BASE RELOCATIONS #{X}\n", .{sect_id + 1});
                 const offset = dir.virtual_address - sect_hdr.virtual_address + sect_hdr.pointer_to_raw_data;
                 const base_relocs = self.data[offset..][0..dir.size];
 
@@ -161,6 +160,8 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     }
 
     if (options.symbols) try self.printSymbols(writer);
+
+    try self.printSummary(writer);
 }
 
 fn printHeaders(self: *Object, writer: anytype) !void {
@@ -406,6 +407,20 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
     try writer.writeByte('\n');
 }
 
+fn printDirectives(self: *Object, writer: anytype) !void {
+    const sect = self.getSectionByName(".drectve") orelse return;
+    const data = self.data[sect.pointer_to_raw_data..][0..sect.size_of_raw_data];
+    try writer.writeAll(
+        \\  Linker Directives
+        \\  _________________
+    );
+    var it = std.mem.split(u8, data, " ");
+    while (it.next()) |dir| {
+        try writer.print("  {s}\n", .{dir});
+    }
+    try writer.writeByte('\n');
+}
+
 fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
     try writer.print("RELOCATIONS #{X}\n\n", .{sect_id + 1});
     const machine = self.getCoffHeader().machine;
@@ -482,13 +497,13 @@ fn printSymbols(self: *Object, writer: anytype) !void {
     var aux_tag: ?coff.Symtab.Tag = null;
     while (slice.next()) |sym| {
         if (aux_counter == 0) {
-            try writer.print("{d:0>3} {d:0>8} ", .{ index, sym.value });
+            try writer.print("{X:0>3} {X:0>8} ", .{ index, sym.value });
             switch (sym.section_number) {
                 .UNDEFINED,
                 .ABSOLUTE,
                 .DEBUG,
                 => try writer.print("{s: <9} ", .{@tagName(sym.section_number)}),
-                else => try writer.print("SECT{d: <5} ", .{@intFromEnum(sym.section_number)}),
+                else => try writer.print("SECT{X: <5} ", .{@intFromEnum(sym.section_number)}),
             }
             const name = sym.getName() orelse blk: {
                 const offset = sym.getNameOffset() orelse return error.MalformedSymbolRecord;
@@ -571,6 +586,43 @@ fn printSymbols(self: *Object, writer: anytype) !void {
     }
 
     try writer.print("\nString table size = 0x{x} bytes\n", .{strtab.buffer.len});
+}
+
+fn printSummary(self: Object, writer: anytype) !void {
+    try writer.writeAll("  Summary\n\n");
+
+    const sections = self.getSectionHeaders();
+
+    var arena = std.heap.ArenaAllocator.init(self.gpa);
+    defer arena.deinit();
+
+    var summary = std.StringArrayHashMap(u64).init(arena.allocator());
+    try summary.ensureUnusedCapacity(sections.len);
+
+    for (sections) |sect| {
+        const name = sect.getName() orelse self.getStrtab().?.get(sect.getNameOffset().?);
+        const gop = summary.getOrPutAssumeCapacity(try arena.allocator().dupe(u8, name));
+        if (!gop.found_existing) gop.value_ptr.* = 0;
+        gop.value_ptr.* += if (self.is_image)
+            mem.alignForward(u64, sect.virtual_size, 0x1000) // TODO don't always assume 0x1000 page size
+        else
+            sect.size_of_raw_data;
+    }
+
+    const Sort = struct {
+        fn lessThan(ctx: void, lhs: []const u8, rhs: []const u8) bool {
+            _ = ctx;
+            return std.mem.order(u8, lhs, rhs) == .lt;
+        }
+    };
+    var keys = try std.ArrayList([]const u8).initCapacity(arena.allocator(), summary.keys().len);
+    keys.appendSliceAssumeCapacity(summary.keys());
+    std.mem.sort([]const u8, keys.items, {}, Sort.lessThan);
+
+    for (keys.items) |key| {
+        const size = summary.get(key).?;
+        try writer.print("  {X: >8} {s}\n", .{ size, key });
+    }
 }
 
 pub fn getCoffHeader(self: Object) coff.CoffHeader {
