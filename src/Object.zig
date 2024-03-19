@@ -408,8 +408,17 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
 }
 
 fn printDirectives(self: *Object, writer: anytype) !void {
-    _ = self;
-    _ = writer;
+    const sect = self.getSectionByName(".drectve") orelse return;
+    const data = self.data[sect.pointer_to_raw_data..][0..sect.size_of_raw_data];
+    try writer.writeAll(
+        \\  Linker Directives
+        \\  _________________
+    );
+    var it = std.mem.split(u8, data, " ");
+    while (it.next()) |dir| {
+        try writer.print("  {s}\n", .{dir});
+    }
+    try writer.writeByte('\n');
 }
 
 fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
