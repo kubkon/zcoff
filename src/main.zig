@@ -8,6 +8,7 @@ const usage =
     \\Usage: zcoff [options] file
     \\
     \\General options:
+    \\-directives                Print linker directives.
     \\-headers                   Print headers.
     \\-symbols                   Print symbol table.
     \\-imports                   Print import table.
