@@ -1,13 +1,8 @@
 gpa: Allocator,
 data: []const u8,
-path: []const u8,
 
 is_image: bool = false,
 coff_header_offset: usize = 0,
-
-pub fn deinit(self: *Object) void {
-    self.gpa.free(self.path);
-}
 
 pub fn parse(self: *Object) !void {
     const msdos_magic = "MZ";

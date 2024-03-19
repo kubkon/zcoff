@@ -129,12 +129,9 @@ pub fn main() !void {
     const data = try file.readToEndAlloc(arena, std.math.maxInt(u32));
 
     const stdout = std.io.getStdOut().writer();
-    var object = Object{
-        .gpa = gpa,
-        .data = data,
-        .path = try gpa.dupe(u8, fname),
-    };
-    defer object.deinit();
+    try stdout.print("Dump of file {s}\n\n", .{fname});
+
+    var object = Object{ .gpa = gpa, .data = data };
     object.parse() catch |err| switch (err) {
         error.InvalidPEHeaderMagic => fatal("invalid PE file - invalid magic bytes", .{}),
         error.MissingPEHeader => fatal("invalid PE file - missing PE header", .{}),
