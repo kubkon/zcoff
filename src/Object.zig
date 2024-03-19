@@ -43,6 +43,7 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     }
 
     if (options.headers) try self.printHeaders(writer);
+    if (options.directives) try self.printDirectives(writer);
 
     var base_relocs_dir: ?coff.ImageDataDirectory = null;
     var imports_dir: ?coff.ImageDataDirectory = null;
@@ -404,6 +405,11 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
         try writer.print("{s: >22} {d} byte align\n", .{ "", alignment });
     }
     try writer.writeByte('\n');
+}
+
+fn printDirectives(self: *Object, writer: anytype) !void {
+    _ = self;
+    _ = writer;
 }
 
 fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {

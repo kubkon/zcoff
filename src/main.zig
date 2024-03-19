@@ -106,6 +106,8 @@ pub fn main() !void {
     while (p.hasMore()) {
         if (p.flagAny("help") or p.flagWindows("?")) {
             fatal(usage, .{});
+        } else if (p.flagAny("directives")) {
+            print_matrix.directives = true;
         } else if (p.flagAny("headers")) {
             print_matrix.headers = true;
         } else if (p.flagAny("symbols")) {
@@ -141,6 +143,7 @@ pub fn main() !void {
 }
 
 pub const PrintMatrix = packed struct {
+    directives: bool = false,
     headers: bool = false,
     symbols: bool = false,
     imports: bool = false,
