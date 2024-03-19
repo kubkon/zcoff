@@ -126,8 +126,6 @@ pub fn main() !void {
     const data = try file.readToEndAlloc(arena, std.math.maxInt(u32));
 
     const stdout = std.io.getStdOut().writer();
-    if (print_matrix.isUnset()) fatal("no option specified", .{});
-
     var object = Object{
         .gpa = gpa,
         .data = data,

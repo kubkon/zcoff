@@ -44,8 +44,6 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
 
     if (options.headers) try self.printHeaders(writer);
 
-    try writer.writeByte('\n');
-
     var base_relocs_dir: ?coff.ImageDataDirectory = null;
     var imports_dir: ?coff.ImageDataDirectory = null;
 
@@ -161,6 +159,8 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     }
 
     if (options.symbols) try self.printSymbols(writer);
+
+    try self.printSummary(writer);
 }
 
 fn printHeaders(self: *Object, writer: anytype) !void {
@@ -571,6 +571,43 @@ fn printSymbols(self: *Object, writer: anytype) !void {
     }
 
     try writer.print("\nString table size = 0x{x} bytes\n", .{strtab.buffer.len});
+}
+
+fn printSummary(self: Object, writer: anytype) !void {
+    try writer.writeAll("  Summary\n\n");
+
+    const sections = self.getSectionHeaders();
+
+    var arena = std.heap.ArenaAllocator.init(self.gpa);
+    defer arena.deinit();
+
+    var summary = std.StringArrayHashMap(u64).init(arena.allocator());
+    try summary.ensureUnusedCapacity(sections.len);
+
+    for (sections) |sect| {
+        const name = sect.getName() orelse self.getStrtab().?.get(sect.getNameOffset().?);
+        const gop = summary.getOrPutAssumeCapacity(try arena.allocator().dupe(u8, name));
+        if (!gop.found_existing) gop.value_ptr.* = 0;
+        gop.value_ptr.* += if (self.is_image)
+            mem.alignForward(u64, sect.virtual_size, 0x1000) // TODO don't always assume 0x1000 page size
+        else
+            sect.size_of_raw_data;
+    }
+
+    const Sort = struct {
+        fn lessThan(ctx: void, lhs: []const u8, rhs: []const u8) bool {
+            _ = ctx;
+            return std.mem.order(u8, lhs, rhs) == .lt;
+        }
+    };
+    var keys = try std.ArrayList([]const u8).initCapacity(arena.allocator(), summary.keys().len);
+    keys.appendSliceAssumeCapacity(summary.keys());
+    std.mem.sort([]const u8, keys.items, {}, Sort.lessThan);
+
+    for (keys.items) |key| {
+        const size = summary.get(key).?;
+        try writer.print("  {X: >8} {s}\n", .{ size, key });
+    }
 }
 
 pub fn getCoffHeader(self: Object) coff.CoffHeader {
