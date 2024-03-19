@@ -408,14 +408,18 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
 }
 
 fn printDirectives(self: *Object, writer: anytype) !void {
+    // TODO handle UTF-8
     const sect = self.getSectionByName(".drectve") orelse return;
+    if (sect.flags.LNK_INFO == 0) return;
     const data = self.data[sect.pointer_to_raw_data..][0..sect.size_of_raw_data];
     try writer.writeAll(
         \\  Linker Directives
         \\  _________________
+        \\
     );
-    var it = std.mem.split(u8, data, " ");
+    var it = std.mem.splitScalar(u8, data, ' ');
     while (it.next()) |dir| {
+        if (dir.len == 0) continue;
         try writer.print("  {s}\n", .{dir});
     }
     try writer.writeByte('\n');
