@@ -133,6 +133,8 @@ pub fn main() !void {
     try stdout.print("Dump of file {s}\n\n", .{fname});
 
     if (Library.isLibrary(data)) {
+        var library = Library{ .gpa = gpa, .data = data };
+        try library.parse();
         try stdout.writeAll("File Type: LIBRARY\n\n");
         return error.TODO;
     } else {
