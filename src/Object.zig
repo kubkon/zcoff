@@ -69,7 +69,7 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
         if (base_relocs_dir) |dir| {
             if (self.getSectionByAddress(dir.virtual_address)) |search| blk: {
                 if (search != sect_id) break :blk;
-                try writer.print("BASE RELOCATIONS #{d}\n", .{sect_id + 1});
+                try writer.print("BASE RELOCATIONS #{X}\n", .{sect_id + 1});
                 const offset = dir.virtual_address - sect_hdr.virtual_address + sect_hdr.pointer_to_raw_data;
                 const base_relocs = self.data[offset..][0..dir.size];
 
@@ -482,13 +482,13 @@ fn printSymbols(self: *Object, writer: anytype) !void {
     var aux_tag: ?coff.Symtab.Tag = null;
     while (slice.next()) |sym| {
         if (aux_counter == 0) {
-            try writer.print("{d:0>3} {d:0>8} ", .{ index, sym.value });
+            try writer.print("{X:0>3} {X:0>8} ", .{ index, sym.value });
             switch (sym.section_number) {
                 .UNDEFINED,
                 .ABSOLUTE,
                 .DEBUG,
                 => try writer.print("{s: <9} ", .{@tagName(sym.section_number)}),
-                else => try writer.print("SECT{d: <5} ", .{@intFromEnum(sym.section_number)}),
+                else => try writer.print("SECT{X: <5} ", .{@intFromEnum(sym.section_number)}),
             }
             const name = sym.getName() orelse blk: {
                 const offset = sym.getNameOffset() orelse return error.MalformedSymbolRecord;
