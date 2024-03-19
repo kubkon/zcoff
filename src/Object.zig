@@ -29,14 +29,6 @@ pub fn parse(self: *Object) !void {
 }
 
 pub fn print(self: *Object, writer: anytype, options: anytype) !void {
-    if (self.is_image) {
-        try writer.writeAll("PE signature found\n\n");
-        try writer.writeAll("File type: EXECUTABLE IMAGE\n\n");
-    } else {
-        try writer.writeAll("No PE signature found\n\n");
-        try writer.writeAll("File type: COFF OBJECT\n\n");
-    }
-
     if (options.headers) try self.printHeaders(writer);
     if (options.directives) try self.printDirectives(writer);
 

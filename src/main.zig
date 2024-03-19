@@ -1,4 +1,5 @@
 const std = @import("std");
+const Library = @import("Library.zig");
 const Object = @import("Object.zig");
 
 var allocator = std.heap.GeneralPurposeAllocator(.{}){};
@@ -131,13 +132,23 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Dump of file {s}\n\n", .{fname});
 
-    var object = Object{ .gpa = gpa, .data = data };
-    object.parse() catch |err| switch (err) {
-        error.InvalidPEHeaderMagic => fatal("invalid PE file - invalid magic bytes", .{}),
-        error.MissingPEHeader => fatal("invalid PE file - missing PE header", .{}),
-        else => |e| return e,
-    };
-    try object.print(stdout, print_matrix);
+    if (Library.isLibrary(data)) {
+        try stdout.writeAll("File Type: LIBRARY\n\n");
+        return error.TODO;
+    } else {
+        var object = Object{ .gpa = gpa, .data = data };
+        object.parse() catch |err| switch (err) {
+            error.InvalidPEHeaderMagic => fatal("invalid PE file - invalid magic bytes", .{}),
+            error.MissingPEHeader => fatal("invalid PE file - missing PE header", .{}),
+            else => |e| return e,
+        };
+        if (object.is_image) {
+            try stdout.writeAll("File Type: EXECUTABLE IMAGE\n\n");
+        } else {
+            try stdout.writeAll("File Type: COFF OBJECT\n\n");
+        }
+        try object.print(stdout, print_matrix);
+    }
 }
 
 pub const PrintMatrix = packed struct {
