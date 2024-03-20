@@ -1,4 +1,5 @@
 const std = @import("std");
+const Library = @import("Library.zig");
 const Object = @import("Object.zig");
 
 var allocator = std.heap.GeneralPurposeAllocator(.{}){};
@@ -8,6 +9,7 @@ const usage =
     \\Usage: zcoff [options] file
     \\
     \\General options:
+    \\-archivemembers            Print archive members summary.
     \\-directives                Print linker directives.
     \\-headers                   Print headers.
     \\-symbols                   Print symbol table.
@@ -107,6 +109,8 @@ pub fn main() !void {
     while (p.hasMore()) {
         if (p.flagAny("help") or p.flagWindows("?")) {
             fatal(usage, .{});
+        } else if (p.flagAny("archivemembers")) {
+            print_matrix.archive_members = true;
         } else if (p.flagAny("directives")) {
             print_matrix.directives = true;
         } else if (p.flagAny("headers")) {
@@ -129,26 +133,58 @@ pub fn main() !void {
     const data = try file.readToEndAlloc(arena, std.math.maxInt(u32));
 
     const stdout = std.io.getStdOut().writer();
-    var object = Object{
-        .gpa = gpa,
-        .data = data,
-        .path = try gpa.dupe(u8, fname),
-    };
-    defer object.deinit();
-    object.parse() catch |err| switch (err) {
-        error.InvalidPEHeaderMagic => fatal("invalid PE file - invalid magic bytes", .{}),
-        error.MissingPEHeader => fatal("invalid PE file - missing PE header", .{}),
-        else => |e| return e,
-    };
-    try object.print(stdout, print_matrix);
+    try stdout.print("Dump of file {s}\n\n", .{fname});
+
+    if (Library.isLibrary(data)) {
+        var library = Library{ .gpa = gpa, .data = data };
+        try library.parse();
+        try stdout.writeAll("File Type: LIBRARY\n\n");
+        try library.print(stdout, print_matrix);
+    } else {
+        var object = Object{ .gpa = gpa, .data = data };
+
+        const msdos_magic = "MZ";
+        const pe_pointer_offset = 0x3C;
+        const pe_magic = "PE\x00\x00";
+        const is_image = std.mem.eql(u8, msdos_magic, data[0..2]);
+        object.is_image = is_image;
+
+        if (is_image) {
+            var stream = std.io.fixedBufferStream(data);
+            const reader = stream.reader();
+            try stream.seekTo(pe_pointer_offset);
+            const coff_header_offset = try reader.readInt(u32, .little);
+            try stream.seekTo(coff_header_offset);
+            var buf: [4]u8 = undefined;
+            try reader.readNoEof(&buf);
+            if (!std.mem.eql(u8, pe_magic, &buf))
+                fatal("invalid PE file - invalid magic bytes", .{});
+
+            // Do some basic validation upfront
+            object.coff_header_offset = coff_header_offset + 4;
+            const coff_header = object.getCoffHeader();
+            if (coff_header.size_of_optional_header == 0)
+                fatal("invalid PE file - missing PE header", .{});
+        }
+
+        if (is_image) {
+            try stdout.writeAll("File Type: EXECUTABLE IMAGE\n\n");
+        } else {
+            try stdout.writeAll("File Type: COFF OBJECT\n\n");
+        }
+
+        try object.print(stdout, print_matrix);
+    }
 }
 
 pub const PrintMatrix = packed struct {
+    archive_members: bool = false,
     directives: bool = false,
     headers: bool = false,
     symbols: bool = false,
     imports: bool = false,
     relocations: bool = false,
+    summary: bool = true,
 
     const Int = blk: {
         const bits = @typeInfo(@This()).Struct.fields.len;

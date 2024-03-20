@@ -1,47 +1,10 @@
 gpa: Allocator,
 data: []const u8,
-path: []const u8,
 
 is_image: bool = false,
 coff_header_offset: usize = 0,
 
-pub fn deinit(self: *Object) void {
-    self.gpa.free(self.path);
-}
-
-pub fn parse(self: *Object) !void {
-    const msdos_magic = "MZ";
-    const pe_pointer_offset = 0x3C;
-    const pe_magic = "PE\x00\x00";
-
-    self.is_image = mem.eql(u8, msdos_magic, self.data[0..2]);
-
-    if (self.is_image) {
-        var stream = std.io.fixedBufferStream(self.data);
-        const reader = stream.reader();
-        try stream.seekTo(pe_pointer_offset);
-        const coff_header_offset = try reader.readInt(u32, .little);
-        try stream.seekTo(coff_header_offset);
-        var buf: [4]u8 = undefined;
-        try reader.readNoEof(&buf);
-        if (!mem.eql(u8, pe_magic, &buf)) return error.InvalidPEHeaderMagic;
-
-        // Do some basic validation upfront
-        self.coff_header_offset = coff_header_offset + 4;
-        const coff_header = self.getCoffHeader();
-        if (coff_header.size_of_optional_header == 0) return error.MissingPEHeader;
-    }
-}
-
-pub fn print(self: *Object, writer: anytype, options: anytype) !void {
-    if (self.is_image) {
-        try writer.writeAll("PE signature found\n\n");
-        try writer.writeAll("File type: EXECUTABLE IMAGE\n\n");
-    } else {
-        try writer.writeAll("No PE signature found\n\n");
-        try writer.writeAll("File type: COFF OBJECT\n\n");
-    }
-
+pub fn print(self: *const Object, writer: anytype, options: anytype) !void {
     if (options.headers) try self.printHeaders(writer);
     if (options.directives) try self.printDirectives(writer);
 
@@ -160,11 +123,10 @@ pub fn print(self: *Object, writer: anytype, options: anytype) !void {
     }
 
     if (options.symbols) try self.printSymbols(writer);
-
-    try self.printSummary(writer);
+    if (options.summary) try self.printSummary(writer);
 }
 
-fn printHeaders(self: *Object, writer: anytype) !void {
+fn printHeaders(self: *const Object, writer: anytype) !void {
     const coff_header = self.getCoffHeader();
 
     // COFF header (object and image)
@@ -371,7 +333,7 @@ fn printDllFlags(flags: coff.DllFlags, writer: anytype) !void {
     }
 }
 
-fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
+fn printSectionHeader(self: *const Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
     const fields = std.meta.fields(coff.SectionHeader);
 
     try writer.print("SECTION HEADER #{X}\n", .{sect_id + 1});
@@ -407,21 +369,25 @@ fn printSectionHeader(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *a
     try writer.writeByte('\n');
 }
 
-fn printDirectives(self: *Object, writer: anytype) !void {
+fn printDirectives(self: *const Object, writer: anytype) !void {
+    // TODO handle UTF-8
     const sect = self.getSectionByName(".drectve") orelse return;
+    if (sect.flags.LNK_INFO == 0) return;
     const data = self.data[sect.pointer_to_raw_data..][0..sect.size_of_raw_data];
     try writer.writeAll(
         \\  Linker Directives
         \\  _________________
+        \\
     );
-    var it = std.mem.split(u8, data, " ");
+    var it = std.mem.splitScalar(u8, data, ' ');
     while (it.next()) |dir| {
+        if (dir.len == 0) continue;
         try writer.print("  {s}\n", .{dir});
     }
     try writer.writeByte('\n');
 }
 
-fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
+fn printRelocations(self: *const Object, writer: anytype, sect_id: u16, sect_hdr: *align(1) const coff.SectionHeader) !void {
     try writer.print("RELOCATIONS #{X}\n\n", .{sect_id + 1});
     const machine = self.getCoffHeader().machine;
     var i: usize = 0;
@@ -481,7 +447,7 @@ fn printRelocations(self: *Object, writer: anytype, sect_id: u16, sect_hdr: *ali
     try writer.writeByte('\n');
 }
 
-fn printSymbols(self: *Object, writer: anytype) !void {
+fn printSymbols(self: *const Object, writer: anytype) !void {
     const symtab = self.getSymtab() orelse {
         return writer.writeAll("No symbol table found.\n");
     };
@@ -585,10 +551,10 @@ fn printSymbols(self: *Object, writer: anytype) !void {
         index += 1;
     }
 
-    try writer.print("\nString table size = 0x{x} bytes\n", .{strtab.buffer.len});
+    try writer.print("\nString table size = 0x{x} bytes\n\n", .{strtab.buffer.len});
 }
 
-fn printSummary(self: Object, writer: anytype) !void {
+fn printSummary(self: *const Object, writer: anytype) !void {
     try writer.writeAll("  Summary\n\n");
 
     const sections = self.getSectionHeaders();
