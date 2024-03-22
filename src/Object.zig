@@ -398,12 +398,12 @@ fn printRelocations(self: *const Object, writer: anytype, sect_id: u16, sect_hdr
     try writer.print(" {s: <8} {s: <16} {s: <16} {s: <12} {s}\n", .{ "Offset", "Type", "Applied To", "Symbol Index", "Symbol Name" });
     try writer.print(" {s:_<8} {s:_<16} {s:_<16} {s:_<12} {s:_<11}\n", .{ "_", "_", "_", "_", "_" });
     while (i < sect_hdr.number_of_relocations) : (i += 1) {
-        const reloc = @as(*align(1) const Relocation, @ptrCast(self.data.ptr + offset)).*;
+        const reloc = @as(*align(1) const coff.Relocation, @ptrCast(self.data.ptr + offset)).*;
         // Reloc type
         var rel_type_buffer: [16]u8 = [_]u8{' '} ** 16;
         const rel_type = switch (machine) {
-            .X64 => @tagName(@as(ImageRelAmd64, @enumFromInt(reloc.type))),
-            .ARM64 => @tagName(@as(ImageRelArm64, @enumFromInt(reloc.type))),
+            .X64 => @tagName(@as(coff.ImageRelAmd64, @enumFromInt(reloc.type))),
+            .ARM64 => @tagName(@as(coff.ImageRelArm64, @enumFromInt(reloc.type))),
             else => "unknown",
         };
         @memcpy(rel_type_buffer[0..rel_type.len], rel_type); // TODO check we don't overflow
@@ -413,7 +413,7 @@ fn printRelocations(self: *const Object, writer: anytype, sect_id: u16, sect_hdr
             &rel_type_buffer,
         });
         // Applied To
-        const code_size = reloc.getCodeSize(self.*);
+        const code_size = getCodeSize(reloc, self.*);
         const code = switch (code_size) {
             0 => 0,
             1 => data[reloc.virtual_address],
@@ -703,173 +703,56 @@ pub fn getFileOffsetForAddress(self: Object, rva: u32) u32 {
     return rva - sect.virtual_address + sect.pointer_to_raw_data;
 }
 
-const Relocation = extern struct {
-    virtual_address: u32,
-    symbol_table_index: u32,
-    type: u16,
-
-    fn getCodeSize(rel: Relocation, obj: Object) u8 {
-        const machine = obj.getCoffHeader().machine;
-        return switch (machine) {
-            .X64 => switch (@as(ImageRelAmd64, @enumFromInt(rel.type))) {
-                .absolute => 0,
-                .addr64 => 8,
-                .addr32,
-                .addr32nb,
-                .rel32,
-                .rel32_1,
-                .rel32_2,
-                .rel32_3,
-                .rel32_4,
-                .rel32_5,
-                => 4,
-                .section => 2,
-                .secrel => 4,
-                .secrel7 => 1,
-                .token => 8,
-                .srel32 => 4,
-                .pair,
-                .sspan32,
-                => 4,
-            },
-            .ARM64 => switch (@as(ImageRelArm64, @enumFromInt(rel.type))) {
-                .absolute => 0,
-                .addr32,
-                .addr32nb,
-                => 4,
-                .branch26,
-                .pagebase_rel21,
-                .rel21,
-                .pageoffset_12a,
-                .pageoffset_12l,
-                .low12a,
-                .high12a,
-                .low12l,
-                => 4,
-                .secrel => 4,
-                .token => 8,
-                .section => 2,
-                .addr64 => 8,
-                .branch19, .branch14 => 4,
-                .rel32 => 4,
-            },
-            else => @panic("TODO this arch support"),
-        };
-    }
-};
-
-const ImageRelAmd64 = enum(u16) {
-    /// The relocation is ignored.
-    absolute = 0,
-
-    /// The 64-bit VA of the relocation target.
-    addr64 = 1,
-
-    /// The 32-bit VA of the relocation target.
-    addr32 = 2,
-
-    /// The 32-bit address without an image base.
-    addr32nb = 3,
-
-    /// The 32-bit relative address from the byte following the relocation.
-    rel32 = 4,
-
-    /// The 32-bit address relative to byte distance 1 from the relocation.
-    rel32_1 = 5,
-
-    /// The 32-bit address relative to byte distance 2 from the relocation.
-    rel32_2 = 6,
-
-    /// The 32-bit address relative to byte distance 3 from the relocation.
-    rel32_3 = 7,
-
-    /// The 32-bit address relative to byte distance 4 from the relocation.
-    rel32_4 = 8,
-
-    /// The 32-bit address relative to byte distance 5 from the relocation.
-    rel32_5 = 9,
-
-    /// The 16-bit section index of the section that contains the target.
-    /// This is used to support debugging information.
-    section = 10,
-
-    /// The 32-bit offset of the target from the beginning of its section.
-    /// This is used to support debugging information and static thread local storage.
-    secrel = 11,
-
-    /// A 7-bit unsigned offset from the base of the section that contains the target.
-    secrel7 = 12,
-
-    /// CLR tokens.
-    token = 13,
-
-    /// A 32-bit signed span-dependent value emitted into the object.
-    srel32 = 14,
-
-    /// A pair that must immediately follow every span-dependent value.
-    pair = 15,
-
-    /// A 32-bit signed span-dependent value that is applied at link time.
-    sspan32 = 16,
-};
-
-const ImageRelArm64 = enum(u16) {
-    /// The relocation is ignored.
-    absolute = 0,
-
-    /// The 32-bit VA of the target.
-    addr32 = 1,
-
-    /// The 32-bit RVA of the target.
-    addr32nb = 2,
-
-    /// The 26-bit relative displacement to the target, for B and BL instructions.
-    branch26 = 3,
-
-    /// The page base of the target, for ADRP instruction.
-    pagebase_rel21 = 4,
-
-    /// The 21-bit relative displacement to the target, for instruction ADR.
-    rel21 = 5,
-
-    /// The 12-bit page offset of the target, for instructions ADD/ADDS (immediate) with zero shift.
-    pageoffset_12a = 6,
-
-    /// The 12-bit page offset of the target, for instruction LDR (indexed, unsigned immediate).
-    pageoffset_12l = 7,
-
-    /// The 32-bit offset of the target from the beginning of its section.
-    /// This is used to support debugging information and static thread local storage.
-    secrel = 8,
-
-    /// Bit 0:11 of section offset of the target for instructions ADD/ADDS (immediate) with zero shift.
-    low12a = 9,
-
-    /// Bit 12:23 of section offset of the target, for instructions ADD/ADDS (immediate) with zero shift.
-    high12a = 10,
-
-    /// Bit 0:11 of section offset of the target, for instruction LDR (indexed, unsigned immediate).
-    low12l = 11,
-
-    /// CLR token.
-    token = 12,
-
-    /// The 16-bit section index of the section that contains the target.
-    /// This is used to support debugging information.
-    section = 13,
-
-    /// The 64-bit VA of the relocation target.
-    addr64 = 14,
-
-    /// The 19-bit offset to the relocation target, for conditional B instruction.
-    branch19 = 15,
-
-    /// The 14-bit offset to the relocation target, for instructions TBZ and TBNZ.
-    branch14 = 16,
-
-    /// The 32-bit relative address from the byte following the relocation.
-    rel32 = 17,
-};
+fn getCodeSize(rel: coff.Relocation, obj: Object) u8 {
+    const machine = obj.getCoffHeader().machine;
+    return switch (machine) {
+        .X64 => switch (@as(coff.ImageRelAmd64, @enumFromInt(rel.type))) {
+            .absolute => 0,
+            .addr64 => 8,
+            .addr32,
+            .addr32nb,
+            .rel32,
+            .rel32_1,
+            .rel32_2,
+            .rel32_3,
+            .rel32_4,
+            .rel32_5,
+            => 4,
+            .section => 2,
+            .secrel => 4,
+            .secrel7 => 1,
+            .token => 8,
+            .srel32 => 4,
+            .pair,
+            .sspan32,
+            => 4,
+            else => unreachable,
+        },
+        .ARM64 => switch (@as(coff.ImageRelArm64, @enumFromInt(rel.type))) {
+            .absolute => 0,
+            .addr32,
+            .addr32nb,
+            => 4,
+            .branch26,
+            .pagebase_rel21,
+            .rel21,
+            .pageoffset_12a,
+            .pageoffset_12l,
+            .low12a,
+            .high12a,
+            .low12l,
+            => 4,
+            .secrel => 4,
+            .token => 8,
+            .section => 2,
+            .addr64 => 8,
+            .branch19, .branch14 => 4,
+            .rel32 => 4,
+            else => unreachable,
+        },
+        else => @panic("TODO this arch support"),
+    };
+}
 
 const assert = std.debug.assert;
 const coff = std.coff;

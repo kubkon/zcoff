@@ -17,10 +17,6 @@ pub fn deinit(self: *Library) void {
 }
 
 pub fn parse(self: *Library) !void {
-    var stream = std.io.fixedBufferStream(self.data);
-    const reader = stream.reader();
-    _ = try reader.readBytesNoEof(magic.len);
-
     var check: packed struct {
         symdef: bool = false,
         symdef_sorted: bool = false,
@@ -28,32 +24,33 @@ pub fn parse(self: *Library) !void {
     } = .{};
     var member_count: usize = 0;
 
+    var pos: usize = magic.len;
     while (true) {
-        if (!std.mem.isAligned(stream.pos, 2)) stream.pos += 1;
-        if (stream.pos >= self.data.len) break;
+        if (!std.mem.isAligned(pos, 2)) pos += 1;
+        if (pos >= self.data.len) break;
 
-        defer member_count += 1;
-
-        const hdr = try reader.readStruct(Header);
+        const hdr = @as(*align(1) const Header, @ptrCast(self.data.ptr + pos));
+        pos += @sizeOf(Header);
 
         if (!std.mem.eql(u8, &hdr.end, end)) return error.InvalidHeaderDelimiter;
 
         const size = try hdr.getSize();
         defer {
-            _ = stream.seekBy(size) catch {};
+            pos += size;
+            member_count += 1;
         }
 
         if (hdr.isLinkerMember()) {
             if (!check.symdef) {
                 if (member_count != 0) return error.InvalidLinkerMember;
-                try self.symdef.parse(self.gpa, self.data[stream.pos..][0..size]);
+                try self.symdef.parse(self.gpa, self.data[pos..][0..size]);
                 check.symdef = true;
                 continue;
             }
 
             if (!check.symdef_sorted) {
                 if (member_count != 1) return error.InvalidLinkerMember;
-                try self.symdef_sorted.parse(self.gpa, self.data[stream.pos..][0..size]);
+                try self.symdef_sorted.parse(self.gpa, self.data[pos..][0..size]);
                 check.symdef_sorted = true;
                 continue;
             }
@@ -64,33 +61,33 @@ pub fn parse(self: *Library) !void {
         if (hdr.isLongnamesMember()) {
             if (!check.longnames) {
                 if (member_count != 2) return error.InvalidLinkerMember;
-                self.longnames = self.data[stream.pos..][0..size];
+                self.longnames = self.data[pos..][0..size];
                 check.longnames = true;
                 continue;
             }
         }
 
+        if (hdr.isHybridmapMember() or hdr.isEcsymbolsMember()) continue; // TODO: what the heck are these anyhow?
+
         try self.members.append(self.gpa, .{
-            .offset = stream.pos - @sizeOf(Header),
+            .offset = pos - @sizeOf(Header),
             .header = hdr,
             .object = .{
                 .gpa = self.gpa,
-                .data = self.data[stream.pos..][0..size],
+                .data = self.data[pos..][0..size],
             },
         });
     }
 }
 
 pub fn print(self: *const Library, writer: anytype, options: anytype) !void {
-    for (self.members.items(.offset), self.members.items(.header), self.members.items(.object)) |off, *header, object| {
+    for (self.members.items(.offset), self.members.items(.header), self.members.items(.object)) |off, header, object| {
         if (options.archive_members) try self.printArchiveMember(off, header, writer);
         if (isImportHeader(object.data)) {
             if (!options.headers) continue;
 
-            var stream = std.io.fixedBufferStream(object.data);
-            const reader = stream.reader();
-            const hdr = try reader.readStruct(ImportHeader);
-            const strings = object.data[@sizeOf(ImportHeader)..][0..hdr.size_of_data];
+            const hdr = @as(*align(1) const coff.ImportHeader, @ptrCast(object.data.ptr)).*;
+            const strings = object.data[@sizeOf(coff.ImportHeader)..][0..hdr.size_of_data];
             const import_name = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(strings.ptr)), 0);
             const dll_name = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(strings.ptr + import_name.len + 1)), 0);
 
@@ -122,6 +119,7 @@ pub fn print(self: *const Library, writer: anytype, options: anytype) !void {
                         trimmed[0..index],
                     });
                 },
+                else => unreachable,
             }
             try writer.writeByte('\n');
         } else {
@@ -264,6 +262,14 @@ const Header = extern struct {
     fn isLongnamesMember(hdr: *const Header) bool {
         return std.mem.eql(u8, &hdr.name, longnames_member);
     }
+
+    fn isHybridmapMember(hdr: *const Header) bool {
+        return std.mem.eql(u8, &hdr.name, hybridmap_member);
+    }
+
+    fn isEcsymbolsMember(hdr: *const Header) bool {
+        return std.mem.eql(u8, &hdr.name, ecsymbols_member);
+    }
 };
 
 const Symdef = struct {
@@ -358,55 +364,15 @@ const SymdefSorted = struct {
 
 const Member = struct {
     offset: usize,
-    header: Header,
+    header: *const Header,
     object: Object,
 };
 
 fn isImportHeader(data: []const u8) bool {
-    var stream = std.io.fixedBufferStream(data);
-    const reader = stream.reader();
-    const sig1 = reader.readInt(u16, .little) catch return false;
-    const sig2 = reader.readInt(u16, .little) catch return false;
+    const sig1 = std.mem.readInt(u16, data[0..2], .little);
+    const sig2 = std.mem.readInt(u16, data[2..4], .little);
     return @as(coff.MachineType, @enumFromInt(sig1)) == .Unknown and sig2 == 0xFFFF;
 }
-
-const ImportHeader = extern struct {
-    sig1: coff.MachineType,
-    sig2: u16,
-    version: u16,
-    machine: coff.MachineType,
-    time_date_stamp: u32,
-    size_of_data: u32,
-    hint: u16,
-    types: packed struct {
-        type: ImportType,
-        name_type: ImportNameType,
-        reserved: u11,
-    },
-};
-
-const ImportType = enum(u2) {
-    /// Executable code.
-    CODE = 0,
-    /// Data.
-    DATA = 1,
-    /// Specified as CONST in .def file.
-    CONST = 2,
-};
-
-const ImportNameType = enum(u3) {
-    /// The import is by ordinal. This indicates that the value in the Ordinal/Hint
-    /// field of the import header is the import's ordinal. If this constant is not
-    /// specified, then the Ordinal/Hint field should always be interpreted as the import's hint.
-    ORDINAL = 0,
-    /// The import name is identical to the public symbol name.
-    NAME = 1,
-    /// The import name is the public symbol name, but skipping the leading ?, @, or optionally _.
-    NAME_NOPREFIX = 2,
-    /// The import name is the public symbol name, but skipping the leading ?, @, or optionally _,
-    /// and truncating at the first @.
-    NAME_UNDECORATE = 3,
-};
 
 const magic = "!<arch>\n";
 const end = "`\n";
@@ -414,6 +380,7 @@ const pad = "\n";
 const linker_member = genMemberName("/");
 const longnames_member = genMemberName("//");
 const hybridmap_member = genMemberName("/<HYBRIDMAP>/");
+const ecsymbols_member = genMemberName("/<ECSYMBOLS>/");
 
 const assert = std.debug.assert;
 const coff = std.coff;
