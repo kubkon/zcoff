@@ -540,6 +540,26 @@ fn printSymbols(self: *const Object, writer: anytype) !void {
                     }
                     try writer.writeByte('\n');
                 },
+                .func_def => |func_def| {
+                    try writer.print("    Tag index {x:0>8}, size {x:0>8}, lines {x:0>8}, next function {x:0>8}\n", .{
+                        func_def.tag_index,
+                        func_def.total_size,
+                        func_def.pointer_to_linenumber,
+                        func_def.pointer_to_next_function,
+                    });
+                },
+                .debug_info => |debug_info| {
+                    try writer.print("    Line# {x}", .{debug_info.linenumber});
+                    const st_sym = symtab.at(index - aux_counter, .symbol).symbol;
+                    const name = st_sym.getName() orelse blk: {
+                        const offset = st_sym.getNameOffset() orelse return error.MalformedSymbolRecord;
+                        break :blk strtab.get(offset);
+                    };
+                    if (mem.eql(u8, name, ".bf")) {
+                        try writer.print(", end {x:0>8}", .{debug_info.pointer_to_next_function});
+                    }
+                    try writer.writeByte('\n');
+                },
                 else => |other| {
                     std.log.warn("Unhandled auxiliary symbol: {}", .{other});
                 },
