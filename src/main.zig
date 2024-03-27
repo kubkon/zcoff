@@ -10,6 +10,7 @@ const usage =
     \\
     \\General options:
     \\-archivemembers            Print archive members summary.
+    \\-archivesymbols            Print archive symbol table.
     \\-directives                Print linker directives.
     \\-headers                   Print headers.
     \\-symbols                   Print symbol table.
@@ -111,6 +112,8 @@ pub fn main() !void {
             fatal(usage, .{});
         } else if (p.flagAny("archivemembers")) {
             print_matrix.archive_members = true;
+        } else if (p.flagAny("archivesymbols")) {
+            print_matrix.archive_symbols = true;
         } else if (p.flagAny("directives")) {
             print_matrix.directives = true;
         } else if (p.flagAny("headers")) {
@@ -179,6 +182,7 @@ pub fn main() !void {
 
 pub const PrintMatrix = packed struct {
     archive_members: bool = false,
+    archive_symbols: bool = false,
     directives: bool = false,
     headers: bool = false,
     symbols: bool = false,

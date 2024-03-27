@@ -81,6 +81,8 @@ pub fn parse(self: *Library) !void {
 }
 
 pub fn print(self: *const Library, writer: anytype, options: anytype) !void {
+    if (options.archive_symbols) try self.printArchiveSymbols(writer);
+
     for (self.members.items(.offset), self.members.items(.header), self.members.items(.object)) |off, header, object| {
         if (options.archive_members) try self.printArchiveMember(off, header, writer);
         if (isImportHeader(object.data)) {
@@ -130,6 +132,15 @@ pub fn print(self: *const Library, writer: anytype, options: anytype) !void {
     }
 
     if (options.summary) try self.printSummary(writer);
+}
+
+fn printArchiveSymbols(self: *const Library, writer: anytype) !void {
+    try writer.print("Archive symbol table: #{X} symbols\n", .{self.symdef_sorted.indexes.items.len});
+    for (self.symdef_sorted.indexes.items) |entry| {
+        const offset = self.symdef_sorted.members.items[entry.index - 1];
+        try writer.print("  {s} at {X}\n", .{ entry.name, offset });
+    }
+    try writer.writeByte('\n');
 }
 
 fn printArchiveMember(self: *const Library, off: usize, hdr: *const Header, writer: anytype) !void {
