@@ -11,7 +11,8 @@ Available options:
 Usage: zcoff [options] file
 
 General options:
--archivemembers            Print headers of archive members.
+-archivemembers            Print archive members summary.
+-archivesymbols            Print archive symbol table.
 -directives                Print linker directives.
 -headers                   Print headers.
 -symbols                   Print symbol table.
