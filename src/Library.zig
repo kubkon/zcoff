@@ -109,17 +109,15 @@ pub fn print(self: *const Library, writer: anytype, options: anytype) !void {
             switch (hdr.types.name_type) {
                 .ORDINAL => {},
                 .NAME => try writer.print("  {s: <13}: {s}\n", .{ "Name", import_name }),
-                .NAME_NOPREFIX => try writer.print("  {s: <13}: {s}\n", .{
-                    "Name",
-                    std.mem.trimLeft(u8, import_name, "?@_"),
-                }),
+                .NAME_NOPREFIX => try writer.print("  {s: <13}: {s}\n", .{ "Name", std.mem.trimLeft(u8, import_name, "?@_") }),
                 .NAME_UNDECORATE => {
                     const trimmed = std.mem.trimLeft(u8, import_name, "?@_");
                     const index = std.mem.indexOf(u8, trimmed, "@") orelse trimmed.len;
-                    try writer.print("  {s: <13}: {s}\n", .{
-                        "Name",
-                        trimmed[0..index],
-                    });
+                    try writer.print("  {s: <13}: {s}\n", .{ "Name", trimmed[0..index] });
+                },
+                .NAME_EXPORTAS => {
+                    const actual_name = std.mem.sliceTo(@as([*:0]const u8, @ptrCast(strings.ptr + import_name.len + 1 + dll_name.len + 1)), 0);
+                    try writer.print("  {s: <13}: {s}\n", .{ "Name", actual_name });
                 },
                 else => unreachable,
             }
