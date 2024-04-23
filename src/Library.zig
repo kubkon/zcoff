@@ -67,7 +67,8 @@ pub fn parse(self: *Library) !void {
             }
         }
 
-        if (hdr.isHybridmapMember() or hdr.isEcsymbolsMember()) continue; // TODO: what the heck are these anyhow?
+        // https://reviews.llvm.org/D120645
+        if (hdr.isHybridmapMember() or hdr.isEcsymbolsMember() or hdr.isXfgmapMember()) continue; // TODO: what the heck are these anyhow?
 
         try self.members.append(self.gpa, .{
             .offset = pos - @sizeOf(Header),
@@ -279,6 +280,10 @@ const Header = extern struct {
     fn isEcsymbolsMember(hdr: *const Header) bool {
         return std.mem.eql(u8, &hdr.name, ecsymbols_member);
     }
+
+    fn isXfgmapMember(hdr: *const Header) bool {
+        return std.mem.eql(u8, &hdr.name, xfgmap_member);
+    }
 };
 
 const Symdef = struct {
@@ -390,6 +395,7 @@ const linker_member = genMemberName("/");
 const longnames_member = genMemberName("//");
 const hybridmap_member = genMemberName("/<HYBRIDMAP>/");
 const ecsymbols_member = genMemberName("/<ECSYMBOLS>/");
+const xfgmap_member = genMemberName("/<XFGHASHMAP>/");
 
 const assert = std.debug.assert;
 const coff = std.coff;
