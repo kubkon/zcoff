@@ -385,7 +385,7 @@ const Member = struct {
 fn isImportHeader(data: []const u8) bool {
     const sig1 = std.mem.readInt(u16, data[0..2], .little);
     const sig2 = std.mem.readInt(u16, data[2..4], .little);
-    return @as(coff.MachineType, @enumFromInt(sig1)) == .Unknown and sig2 == 0xFFFF;
+    return @as(coff.MachineType, @enumFromInt(sig1)) == .UNKNOWN and sig2 == 0xFFFF;
 }
 
 const magic = "!<arch>\n";
