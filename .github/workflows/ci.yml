@@ -12,13 +12,13 @@ jobs:
         os: [macos, ubuntu, windows]
 
     steps:
-    - if: matrix.os == 'windows'
-      run: git config --global core.autocrlf false
-    - uses: actions/checkout@v2
-      with:
-        submodules: true
-    - uses: goto-bus-stop/setup-zig@v1
-      with:
-        version: master
-    - run: zig fmt --check src 
-    - run: zig build install
+      - if: matrix.os == 'windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
+      - run: zig fmt --check src
+      - run: zig build install

@@ -23,7 +23,7 @@ const usage =
 fn fatal(comptime format: []const u8, args: anytype) noreturn {
     ret: {
         const msg = std.fmt.allocPrint(gpa, format ++ "\n", args) catch break :ret;
-        std.io.getStdErr().writeAll(msg) catch {};
+        std.fs.File.stdout().writeAll(msg) catch {};
     }
     std.process.exit(1);
 }
@@ -135,7 +135,10 @@ pub fn main() !void {
     defer file.close();
     const data = try file.readToEndAlloc(arena, std.math.maxInt(u32));
 
-    const stdout = std.io.getStdOut().writer();
+    var buffer: [1024]u8 = undefined;
+    var fw = std.fs.File.stdout().writer(&buffer);
+    var stdout = &fw.interface;
+    defer stdout.flush() catch fatal("could not write to stdout", .{});
     try stdout.print("Dump of file {s}\n\n", .{fname});
 
     if (Library.isLibrary(data)) {
