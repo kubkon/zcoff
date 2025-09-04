@@ -19,6 +19,6 @@ jobs:
           submodules: true
       - uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: 0.15.1
       - run: zig fmt --check src
       - run: zig build install
