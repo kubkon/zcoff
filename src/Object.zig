@@ -87,7 +87,7 @@ pub fn print(self: *const Object, writer: anytype, options: anytype) !void {
 
                     const lookup_table_offset = self.getFileOffsetForAddress(import.import_lookup_table_rva);
                     if (is_32bit) {
-                        const raw_ptr = try std.math.alignCast(4, self.data.ptr + lookup_table_offset);
+                        const raw_ptr = try std.math.alignCast(.@"4", self.data.ptr + lookup_table_offset);
                         const raw_lookups = mem.sliceTo(@as([*:0]const u32, @ptrCast(raw_ptr)), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry32.getImportByOrdinal(rl)) |_| {
@@ -101,7 +101,7 @@ pub fn print(self: *const Object, writer: anytype, options: anytype) !void {
                             } else unreachable;
                         }
                     } else {
-                        const raw_ptr = try std.math.alignCast(8, self.data.ptr + lookup_table_offset);
+                        const raw_ptr = try std.math.alignCast(.@"8", self.data.ptr + lookup_table_offset);
                         const raw_lookups = mem.sliceTo(@as([*:0]const u64, @ptrCast(raw_ptr)), 0);
                         for (raw_lookups) |rl| {
                             if (coff.ImportLookupEntry64.getImportByOrdinal(rl)) |_| {
